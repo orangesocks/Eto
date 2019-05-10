@@ -392,6 +392,18 @@ namespace Eto.GtkSharp.Drawing
 			}
 			AntiAlias = oldAA;
 		}
+		public void DrawText(FormattedText formattedText, PointF location)
+		{
+			var oldAA = AntiAlias;
+			AntiAlias = true;
+			SetOffset(true);
+			using (var layout = CreateLayout())
+			{
+				var handler = (FormattedTextHandler)formattedText.Handler;
+				handler.Draw(this, layout, Control, location);
+			}
+			AntiAlias = oldAA;
+		}
 
 		public SizeF MeasureString(Font font, string text)
 		{

@@ -300,6 +300,15 @@ namespace Eto.Wpf.Drawing
             Control.Pop();
         }
 
+		public void DrawText(FormattedText formattedText, PointF location)
+		{
+			SetOffset(true);
+			if (formattedText.Handler is FormattedTextHandler handler)
+			{
+				handler.DrawText(this, location);
+			}
+		}
+		/*
 		public void DrawText(Font font, SolidBrush b, float x, float y, string text)
 		{
 			SetOffset(true);
@@ -312,7 +321,7 @@ namespace Eto.Wpf.Drawing
 					formattedText.SetTextDecorations(fontHandler.WpfTextDecorationsFrozen, 0, text.Length);
 				Control.DrawText(formattedText, new sw.Point(x, y));
 			}
-		}
+		}*/
 
 		public SizeF MeasureString(Font font, string text)
 		{

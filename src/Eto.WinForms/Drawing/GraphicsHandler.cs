@@ -349,6 +349,11 @@ namespace Eto.WinForms.Drawing
 			}
 		}
 
+		public void DrawText(FormattedText formattedText, PointF location)
+		{
+			(formattedText.Handler as FormattedTextHandler)?.Draw(this, location);
+		}
+
 		public SizeF MeasureString(Font font, string text)
 		{
 			if (string.IsNullOrEmpty(text))

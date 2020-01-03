@@ -354,7 +354,7 @@ namespace Eto.Mac
 
 		public static WindowStyle ToEtoWindowStyle(this NSWindowStyle style)
 		{
-			return style.HasFlag(NSWindowStyle.Borderless) ? WindowStyle.None : WindowStyle.Default;
+			return style.HasFlag(NSWindowStyle.Titled) ? WindowStyle.Default : WindowStyle.None;
 		}
 
 		public static NSWindowStyle ToNS(this WindowStyle style, NSWindowStyle existing)
@@ -586,6 +586,65 @@ namespace Eto.Mac
 			text = text.Replace("&", "");
 			text = text.Replace("\x01", "&");
 			return text;
+		}
+
+		public static NSCursor ToNS(this Cursor cursor) => CursorHandler.GetControl(cursor);
+
+		public static NSLineBreakMode ToNS(this FormattedTextTrimming trim)
+		{
+			switch (trim)
+			{
+				case FormattedTextTrimming.CharacterEllipsis:
+				case FormattedTextTrimming.WordEllipsis:
+					return NSLineBreakMode.TruncatingTail;
+				default:
+				case FormattedTextTrimming.None:
+					return NSLineBreakMode.Clipping;
+			}
+		}
+
+		public static NSLineBreakMode ToNS(this FormattedTextWrapMode wrap)
+		{
+			switch (wrap)
+			{
+				case FormattedTextWrapMode.Character:
+					return NSLineBreakMode.CharWrapping;
+				case FormattedTextWrapMode.Word:
+					return NSLineBreakMode.ByWordWrapping;
+				default:
+				case FormattedTextWrapMode.None:
+					return NSLineBreakMode.Clipping;
+			}
+		}
+
+		public static NSLineBreakMode ToNS(this WrapMode wrap)
+		{
+			switch (wrap)
+			{
+				case WrapMode.Character:
+					return NSLineBreakMode.CharWrapping;
+				case WrapMode.Word:
+					return NSLineBreakMode.ByWordWrapping;
+				default:
+				case WrapMode.None:
+					return NSLineBreakMode.Clipping;
+			}
+		}
+		public static NSTextAlignment ToNS(this FormattedTextAlignment align)
+		{
+			switch (align)
+			{
+				case FormattedTextAlignment.Left:
+					return NSTextAlignment.Left;
+				case FormattedTextAlignment.Center:
+					return NSTextAlignment.Center;
+				case FormattedTextAlignment.Right:
+					return NSTextAlignment.Right;
+				case FormattedTextAlignment.Justify:
+					return NSTextAlignment.Justified;
+				default:
+					throw new NotSupportedException();
+			}
 		}
 	}
 }

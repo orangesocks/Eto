@@ -5,6 +5,7 @@ using Eto.Mac.Forms.Controls;
 using System.Collections.Generic;
 using Eto.Mac.Forms.Printing;
 using System.Linq;
+using System.Runtime.InteropServices;
 
 #if XAMMAC2
 using AppKit;
@@ -79,7 +80,7 @@ namespace Eto.Mac.Forms
 
 	public interface IMacViewHandler : IMacControlHandler
 	{
-		Size? PreferredSize { get; }
+		Size UserPreferredSize { get; }
 
 		Control Widget { get; }
 
@@ -111,7 +112,7 @@ namespace Eto.Mac.Forms
 		public static readonly object AutoSize_Key = new object();
 		public static readonly object MinimumSize_Key = new object();
 		public static readonly object MaximumSize_Key = new object();
-		public static readonly object PreferredSize_Key = new object();
+		public static readonly object UserPreferredSize_Key = new object();
 		public static readonly object NaturalAvailableSize_Key = new object();
 		public static readonly object NaturalSize_Key = new object();
 		public static readonly object NaturalSizeInfinity_Key = new object();
@@ -179,8 +180,13 @@ namespace Eto.Mac.Forms
 		public static readonly Selector selSetCanDrawSubviewsIntoLayer = new Selector("setCanDrawSubviewsIntoLayer:");
 		public static readonly bool supportsCanDrawSubviewsIntoLayer = ObjCExtensions.InstancesRespondToSelector<NSView>("setCanDrawSubviewsIntoLayer:");
 		public static readonly object UseAlignmentFrame_Key = new object();
-
+		public static readonly IntPtr selSetDataProviderForTypes_Handle = Selector.GetHandle("setDataProvider:forTypes:");
+		public static readonly IntPtr selInitWithPasteboardWriter_Handle = Selector.GetHandle("initWithPasteboardWriter:");
 		public const string FlagsChangedEvent = "MacView.FlagsChangedEvent";
+
+		// before 10.12, we have to call base.Layout() AFTER we do our layout otherwise it doesn't work correctly..
+		// however, that causes (temporary) glitches when resizing especially with Scrollable >= 10.12
+		public static readonly bool NewLayout = MacVersion.IsAtLeast(10, 12);
 	}
 
 	public abstract class MacView<TControl, TWidget, TCallback> : MacObject<TControl, TWidget, TCallback>, Control.IHandler, IMacViewHandler
@@ -232,10 +238,14 @@ namespace Eto.Mac.Forms
 			set { Widget.Properties[MacView.MaximumSize_Key] = value; InvalidateMeasure(); }
 		}
 
-		public Size? PreferredSize
+		public Size UserPreferredSize
 		{
-			get { return Widget.Properties.Get<Size?>(MacView.PreferredSize_Key); }
-			set { Widget.Properties[MacView.PreferredSize_Key] = value; }
+			get => Widget.Properties.Get<Size?>(MacView.UserPreferredSize_Key) ?? new Size(-1, -1);
+			set
+			{
+				if (Widget.Properties.TrySet(MacView.UserPreferredSize_Key, value))
+					SetAutoSize();
+			}
 		}
 
 		public virtual Size Size
@@ -243,22 +253,21 @@ namespace Eto.Mac.Forms
 			get
 			{
 				if (!Widget.Loaded)
-					return PreferredSize ?? new Size(-1, -1);
+					return UserPreferredSize;
 				return GetAlignmentFrame().Size.ToEtoSize();
 			}
 			set
 			{
-				AutoSize = value.Width == -1 || value.Height == -1;
+				var preferredSize = UserPreferredSize;
+				if (preferredSize == value)
+					return;
+				UserPreferredSize = value;
+
 				if (!Widget.Loaded)
 				{
-					if (PreferredSize != value)
-					{
-						PreferredSize = value;
-						Callback.OnSizeChanged(Widget, EventArgs.Empty);
-					}
+					Callback.OnSizeChanged(Widget, EventArgs.Empty);
 					return;
 				}
-				PreferredSize = value;
 
 				var oldFrame = GetAlignmentFrame();
 				var newFrame = oldFrame;
@@ -275,6 +284,24 @@ namespace Eto.Mac.Forms
 				CreateTracking();
 				InvalidateMeasure();
 			}
+		}
+
+		public virtual int Width
+		{
+			get => Size.Width;
+			set => Size = new Size(value, UserPreferredSize.Height);
+		}
+
+		public virtual int Height
+		{
+			get => Size.Height;
+			set => Size = new Size(UserPreferredSize.Width, value);
+		}
+
+		protected virtual void SetAutoSize()
+		{
+			var userPreferredSize = UserPreferredSize;
+			AutoSize = userPreferredSize.Width == -1 || userPreferredSize.Height == -1;
 		}
 
 		protected Size? NaturalAvailableSize
@@ -324,28 +351,24 @@ namespace Eto.Mac.Forms
 		public virtual SizeF GetPreferredSize(SizeF availableSize)
 		{
 			SizeF size;
-			if (PreferredSize != null)
+			var preferredSize = UserPreferredSize;
+			// only get natural size if the size isn't explicitly set.
+			if (preferredSize.Width == -1 || preferredSize.Height == -1)
 			{
-				var preferredSize = PreferredSize.Value;
-				// only get natural size if the size isn't explicitly set.
-				if (preferredSize.Width == -1 || preferredSize.Height == -1)
-				{
-					if (preferredSize.Width >= 0)
-						availableSize.Width = preferredSize.Width;
-					if (preferredSize.Height >= 0)
-						availableSize.Height = preferredSize.Height;
-					size = GetNaturalSize(availableSize);
-				}
-				else
-					size = SizeF.Empty;
-
 				if (preferredSize.Width >= 0)
-					size.Width = preferredSize.Width;
+					availableSize.Width = preferredSize.Width;
 				if (preferredSize.Height >= 0)
-					size.Height = preferredSize.Height;
+					availableSize.Height = preferredSize.Height;
+				size = GetNaturalSize(availableSize);
 			}
 			else
-				size = GetNaturalSize(availableSize);
+				size = SizeF.Empty;
+
+			if (preferredSize.Width >= 0)
+				size.Width = preferredSize.Width;
+			if (preferredSize.Height >= 0)
+				size.Height = preferredSize.Height;
+
 			size =  SizeF.Min(SizeF.Max(size, MinimumSize), MaximumSize);
 
 			return size;
@@ -503,6 +526,7 @@ namespace Eto.Mac.Forms
 			var e = handler?.GetDragEventArgs(Runtime.GetNSObject<NSDraggingInfo>(draggingInfoPtr), null);
 			if (e != null)
 			{
+				
 				e.Effects = effect.ToEto();
 				handler.Callback.OnDragOver(handler.Widget, e);
 				if (e.AllowedEffects.HasFlag(e.Effects))
@@ -512,12 +536,14 @@ namespace Eto.Mac.Forms
 		}
 
 
+
 		protected static NSDragOperation TriggerDraggingEntered(IntPtr sender, IntPtr sel, IntPtr draggingInfoPtr)
 		{
 			var obj = Runtime.GetNSObject(sender);
 			var effect = (NSDragOperation)Messaging.IntPtr_objc_msgSendSuper_IntPtr(obj.SuperHandle, sel, draggingInfoPtr);
 			var handler = GetHandler(Runtime.GetNSObject(sender)) as IMacViewHandler;
-			var e = handler?.GetDragEventArgs(Runtime.GetNSObject<NSDraggingInfo>(draggingInfoPtr), null);
+			var draggingInfo = Runtime.GetNSObject<NSDraggingInfo>(draggingInfoPtr);
+			var e = handler?.GetDragEventArgs(draggingInfo, null);
 			if (e != null)
 			{
 				e.Effects = effect.ToEto();
@@ -1175,13 +1201,42 @@ namespace Eto.Mac.Forms
 			}
 		}
 
-		public virtual void DoDragDrop(DataObject data, DragEffects allowedAction)
+		public virtual void DoDragDrop(DataObject data, DragEffects allowedAction, Image image, PointF origin)
 		{
 			var handler = data.Handler as IDataObjectHandler;
 
 			var source = new EtoDragSource { AllowedOperation = allowedAction.ToNS(), SourceView = ContainerControl };
 
-			var session = ContainerControl.BeginDraggingSession(new NSDraggingItem[0], NSApplication.SharedApplication.CurrentEvent, source);
+			NSDraggingItem[] draggingItems = null;
+			if (image != null)
+			{
+				var pasteboardItem = new NSPasteboardItem();
+				// item needs to have data, but we don't want to supply a standard UTI
+				const string utdragimage = "eto.dragimage";
+				pasteboardItem.SetStringForType(string.Empty, utdragimage);
+				// custom types need to be registered when using an NSPasteboardItem..
+				ContainerControl.RegisterForDraggedTypes(new string[] { utdragimage });
+#if XAMMAC2
+				var draggingItem = new NSDraggingItem(pasteboardItem);
+#else
+				var draggingItem = new NSDraggingItem(NSObjectFlag.Empty);
+				Messaging.bool_objc_msgSend_IntPtr(draggingItem.Handle, MacView.selInitWithPasteboardWriter_Handle, pasteboardItem.Handle);
+#endif
+
+				var mouseLocation = PointFromScreen(Mouse.Position);
+				var loc = mouseLocation - origin;
+				if (!ContainerControl.IsFlipped)
+					loc.Y = (float)ContainerControl.Frame.Height - loc.Y - image.Height;
+
+				draggingItem.SetDraggingFrame(new CGRect(loc.X, loc.Y, image.Width, image.Height), image.ToNS());
+
+				draggingItems = new NSDraggingItem[] { draggingItem };
+			}
+
+			if (draggingItems == null)
+				draggingItems = new NSDraggingItem[0];
+
+			var session = ContainerControl.BeginDraggingSession(draggingItems, NSApplication.SharedApplication.CurrentEvent, source);
 			handler.Apply(session.DraggingPasteboard);
 
 			// TODO: block until drag is complete?

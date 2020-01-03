@@ -93,6 +93,14 @@ namespace Eto.Mac.Forms
 			Handler.Callback.OnWindowStateChanged(Handler.Widget, EventArgs.Empty);
 		}
 
+		public bool DisableSetOrigin { get; set; }
+
+		public override void SetFrameOrigin(CGPoint aPoint)
+		{
+			if (!DisableSetOrigin)
+				base.SetFrameOrigin(aPoint);
+		}
+
 		public override void RecalculateKeyViewLoop()
 		{
 			base.RecalculateKeyViewLoop();
@@ -127,6 +135,7 @@ namespace Eto.Mac.Forms
 
 	static class MacWindow
 	{
+		internal static readonly object MovableByWindowBackground_Key = new object();
 		internal static readonly object InitialLocation_Key = new object();
 		internal static readonly object PreferredClientSize_Key = new object();
 		internal static readonly Selector selSetStyleMask = new Selector("setStyleMask:");
@@ -172,6 +181,19 @@ namespace Eto.Mac.Forms
 		public NSObject FieldEditorClient { get; set; }
 
 		public MacFieldEditor FieldEditor => fieldEditor;
+
+		/// <summary>
+		/// Allow moving the window by dragging the background, null to only enable it in certain cases (e.g. when borderless)
+		/// </summary>
+		public bool? MovableByWindowBackground
+		{
+			get => Widget.Properties.Get<bool?>(MacWindow.MovableByWindowBackground_Key);
+			set
+			{
+				if (Widget.Properties.TrySet(MacWindow.MovableByWindowBackground_Key, value))
+					SetMovable();
+			}
+		}
 
 		protected override SizeF GetNaturalSize(SizeF availableSize)
 		{
@@ -479,13 +501,18 @@ namespace Eto.Mac.Forms
 
 		public override NSView ContentControl => Control.ContentView;
 
-		public virtual string Title { get { return Control.Title; } set { Control.Title = value ?? ""; } }
-		// Control.Title throws an exception if value is null
+		public virtual string Title { get => Control.Title; set => Control.Title = value ?? ""; }
+
 		void SetButtonStates()
 		{
 			var button = Control.StandardWindowButton(NSWindowButton.ZoomButton);
 			if (button != null)
 				button.Enabled = Maximizable && Resizable;
+		}
+
+		void SetMovable()
+		{
+			Control.MovableByWindowBackground = MovableByWindowBackground ?? (Resizable && WindowStyle == WindowStyle.None);
 		}
 
 		public bool Resizable
@@ -500,6 +527,7 @@ namespace Eto.Mac.Forms
 					else
 						Control.StyleMask &= ~NSWindowStyle.Resizable;
 					SetButtonStates();
+					SetMovable();
 				}
 			}
 		}
@@ -557,7 +585,7 @@ namespace Eto.Mac.Forms
 			get
 			{
 				if (!Widget.Loaded)
-					return PreferredSize ?? new Size(-1, -1);
+					return UserPreferredSize;
 				return Control.Frame.Size.ToEtoSize();
 			}
 			set
@@ -566,16 +594,15 @@ namespace Eto.Mac.Forms
 				var newFrame = oldFrame.SetSize(value);
 				newFrame.Y = (nfloat)Math.Max(0, oldFrame.Y - (value.Height - oldFrame.Height));
 				Control.SetFrame(newFrame, true);
-				PreferredSize = value;
+				UserPreferredSize = value;
 				SetAutoSize();
 			}
 		}
 
-		void SetAutoSize()
+
+		protected override void SetAutoSize()
 		{
-			AutoSize = true;
-			if (PreferredSize != null)
-				AutoSize &= PreferredSize.Value.Width == -1 || PreferredSize.Value.Height == -1;
+			base.SetAutoSize();
 			if (PreferredClientSize != null)
 				AutoSize &= PreferredClientSize.Value.Width == -1 || PreferredClientSize.Value.Height == -1;
 		}
@@ -734,16 +761,12 @@ namespace Eto.Mac.Forms
 				if (!Widget.Loaded)
 				{
 					PreferredClientSize = value;
-					if (PreferredSize != null)
-					{
-						if (value.Width != -1 && value.Height != -1)
-							PreferredSize = null;
-						else if (value.Width != -1)
-							PreferredSize = new Size(-1, PreferredSize.Value.Height);
-						else if (value.Height != -1)
-							PreferredSize = new Size(PreferredSize.Value.Width, -1);
-
-					}
+					if (value.Width != -1 && value.Height != -1)
+						UserPreferredSize = new Size(-1, -1);
+					else if (value.Width != -1)
+						UserPreferredSize = new Size(-1, UserPreferredSize.Height);
+					else if (value.Height != -1)
+						UserPreferredSize = new Size(UserPreferredSize.Width, -1);
 				}
 				SetAutoSize();
 			}
@@ -806,16 +829,14 @@ namespace Eto.Mac.Forms
 			// location is relative to the main screen, translate to bottom left, inversed
 			var mainFrame = NSScreen.Screens[0].Frame;
 			var frame = Control.Frame;
-			var point = new CGPoint((nfloat)value.X, (nfloat)(mainFrame.Height - value.Y - frame.Height));
-			Control.SetFrameOrigin(point);
+			var point = new CGPoint((nfloat)value.X, (nfloat)(mainFrame.Height - value.Y));
 			if (Control.Screen == null)
 			{
 				// ensure that the control lands on a screen
 				point.X = (nfloat)Math.Min(Math.Max(mainFrame.X, point.X), mainFrame.Right - frame.Width);
 				point.Y = (nfloat)Math.Min(Math.Max(mainFrame.Y, point.Y), mainFrame.Bottom - frame.Height);
-
-				Control.SetFrameOrigin(point);
 			}
+			Control.SetFrameTopLeftPoint(point);
 		}
 
 		public WindowState WindowState
@@ -881,18 +902,14 @@ namespace Eto.Mac.Forms
 			{
 				AutoSize = false;
 				var availableSize = SizeF.PositiveInfinity;
-				if (PreferredSize != null)
-				{
-					var borderSize = GetBorderSize();
-					if (PreferredSize.Value.Width != -1)
-						availableSize.Width = PreferredSize.Value.Width - borderSize.Width;
-					if (PreferredSize.Value.Height != -1)
-						availableSize.Height = PreferredSize.Value.Height - borderSize.Height;
-				}
+				var borderSize = GetBorderSize();
+				if (UserPreferredSize.Width != -1)
+					availableSize.Width = UserPreferredSize.Width - borderSize.Width;
+				if (UserPreferredSize.Height != -1)
+					availableSize.Height = UserPreferredSize.Height - borderSize.Height;
 				var size = GetPreferredSize(availableSize);
 				SetContentSize(size.ToNS());
 				setInitialSize = true;
-
 			}
 			PositionWindow();
 			base.OnLoad(e);
@@ -929,7 +946,8 @@ namespace Eto.Mac.Forms
 				SetLocation(InitialLocation.Value);
 				InitialLocation = null;
 			}
-			Control.Center();
+			else
+				Control.Center();
 		}
 
 		#region IMacContainer implementation
@@ -1009,11 +1027,15 @@ namespace Eto.Mac.Forms
 			{
 				if (Control.RespondsToSelector(MacWindow.selSetStyleMask))
 				{
-					Control.StyleMask = value.ToNS(Control.StyleMask);
+					var newStyleMask = value.ToNS(Control.StyleMask);
+					Control.StyleMask = 0; // reset titled
+					Control.StyleMask = newStyleMask;
 
 					// don't use animation when there's no border.
 					if (value == WindowStyle.None && Control.AnimationBehavior == NSWindowAnimationBehavior.Default)
 						Control.AnimationBehavior = NSWindowAnimationBehavior.None;
+
+					SetMovable();
 				}
 			}
 		}

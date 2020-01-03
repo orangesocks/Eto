@@ -6,6 +6,7 @@ using System.Globalization;
 using Eto.Forms;
 using Eto.Drawing;
 using System.Threading.Tasks;
+using System.Linq;
 
 namespace Eto.Test
 {
@@ -32,6 +33,11 @@ namespace Eto.Test
 			}
 		}
 
+		/// <summary>
+		/// Set to initial section name to select for easier debugging
+		/// </summary>
+		public string InitialSection { get; set; }
+
 		public MainForm(IEnumerable<Section> topNodes = null)
 		{
 			Title = string.Format("Test Application [{0}, {1} {2}, {3}]",
@@ -46,35 +52,13 @@ namespace Eto.Test
 			Style = "main";
 			MinimumSize = new Size(400, 400);
 			topNodes = topNodes ?? TestSections.Get(TestApplication.DefaultTestAssemblies());
-			//SectionList = new SectionListGridView(topNodes);
-			//SectionList = new SectionListTreeView(topNodes);
+
+			var nodes = topNodes.ToList();
 			if (Platform.IsAndroid)
-				SectionList = new SectionListGridView(topNodes);
+				SectionList = new SectionListGridView(nodes);
 			else
-				SectionList = new SectionListTreeGridView(topNodes);
+				SectionList = new SectionListTreeGridView(nodes);
 
-			this.Icon = TestIcons.TestIcon;
-
-			if (Platform.IsDesktop)
-				ClientSize = new Size(900, 650);
-			//Opacity = 0.5;
-
-			Content = MainContent();
-
-			CreateMenuToolBar();
-		}
-
-		public SectionList SectionList { get; set; }
-
-		Control MainContent()
-		{
-			contentContainer = new Panel();
-
-			// set focus when the form is shown
-			Shown += delegate
-			{
-				SectionList.Focus();
-			};
 			SectionList.SelectedItemChanged += (sender, e) =>
 			{
 				Control content = null;
@@ -108,6 +92,35 @@ namespace Eto.Test
 #endif
 			};
 
+
+			this.Icon = TestIcons.TestIcon;
+
+			if (Platform.IsDesktop)
+				ClientSize = new Size(900, 650);
+			//Opacity = 0.5;
+
+			Content = MainContent();
+
+			CreateMenuToolBar();
+
+			if (InitialSection != null)
+			{
+				SectionList.SelectedItem = nodes.SelectMany(r => r).OfType<ISection>().FirstOrDefault(r => r.Text == InitialSection);
+			}
+
+		}
+
+		public SectionList SectionList { get; set; }
+
+		Control MainContent()
+		{
+			contentContainer = new Panel();
+
+			// set focus when the form is shown
+			Shown += delegate
+			{
+				SectionList.Focus();
+			};
 			if (Splitter.IsSupported)
 			{
 				var splitter = new Splitter

@@ -153,19 +153,19 @@ namespace Eto.Mac.Forms.Controls
 				if (naturalSizeInfinity != null)
 					return naturalSizeInfinity.Value;
 
-			    var width = PreferredSize?.Width ?? int.MaxValue;
+				var width = UserPreferredSize.Width;
 				if (width < 0) width = int.MaxValue;
 				var size = Control.Cell.CellSizeForBounds(new CGRect(0, 0, width, int.MaxValue)).ToEto();
 				naturalSizeInfinity = Size.Ceiling(size);
 				return naturalSizeInfinity.Value;
 			}
 
-			if (Widget.Loaded && Wrap != WrapMode.None && PreferredSize?.Width > 0)
+			if (Widget.Loaded && Wrap != WrapMode.None && UserPreferredSize.Width > 0)
 			{
 				/*if (!float.IsPositiveInfinity(availableSize.Width))
 					availableSize.Width = Math.Max(Size.Width, availableSize.Width);
 				else*/
-				availableSize.Width = PreferredSize.Value.Width;
+				availableSize.Width = UserPreferredSize.Width;
 				availableSize.Height = float.PositiveInfinity;
 			}
 
@@ -187,7 +187,7 @@ namespace Eto.Mac.Forms.Controls
 				return;
 			isSizing = true;
 			var size = Size;
-			if (Wrap != WrapMode.None && lastSize.Width != size.Width)
+			if (Wrap != WrapMode.None && lastSize.Width != size.Width && !Control.IsHiddenOrHasHiddenAncestor)
 			{
 				// when wrapping we use the current size, if it changes we check if we need another layout pass
 				// this is needed when resizing a form/label so it can wrap correctly as GetNaturalSize()

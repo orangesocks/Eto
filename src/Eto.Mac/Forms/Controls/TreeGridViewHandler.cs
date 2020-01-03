@@ -460,6 +460,24 @@ namespace Eto.Mac.Forms.Controls
 				return true;
 			}
 
+			[Export("outlineView:draggingSession:endedAtPoint:operation:")]
+#if XAMMAC
+			public new void DraggingSessionEnded(NSOutlineView outlineView, NSDraggingSession session, CGPoint screenPoint, NSDragOperation operation)
+#else
+			public void DraggingSessionEnded(NSOutlineView outlineView, NSDraggingSession session, CGPoint screenPoint, NSDragOperation operation)
+#endif
+			{
+				var h = Handler;
+				if (h == null)
+					return;
+
+				if (h.CustomSelectedItems != null)
+				{
+					h.CustomSelectedItems = null;
+					h.Callback.OnSelectionChanged(h.Widget, EventArgs.Empty);
+				}
+			}
+
 			public override bool OutlineViewwriteItemstoPasteboard(NSOutlineView outlineView, NSArray items, NSPasteboard pboard)
 			{
 				var h = Handler;
@@ -468,15 +486,36 @@ namespace Eto.Mac.Forms.Controls
 
 				if (h.IsMouseDragging)
 				{
-					h.Control.AllowedOperation = null;
+					h.Control.DragInfo = null;
 					// give MouseMove event a chance to start the drag
 					h.DragPasteboard = pboard;
-					h.CustomSelectedItems = GetItems(items).ToList();
+
+					// check if the items are different than the selection so we can fire a changed event
+					bool isDifferentSelection = (nint)items.Count != h.Control.SelectedRowCount;
+					if (!isDifferentSelection)
+					{
+						// same count, ensure they're not different rows
+						// typically only tests one entry here, as there's no way to drag more than a single non-selected item.
+						var selectedRows = h.Control.SelectedRows.ToArray();
+						for (var i = 0; i < selectedRows.Length; i++)
+						{
+							if (items.ValueAt((nuint)i) != h.Control.ItemAtRow((nint)selectedRows[i]).Handle)
+							{
+								isDifferentSelection = true;
+								break;
+							}
+						}
+					}
+
+					if (isDifferentSelection)
+					{
+						h.CustomSelectedItems = GetItems(items).ToList();
+						h.Callback.OnSelectionChanged(h.Widget, EventArgs.Empty);
+					}
 					var args = MacConversions.GetMouseEvent(h, NSApplication.SharedApplication.CurrentEvent, false);
 					h.Callback.OnMouseMove(h.Widget, args);
 					h.DragPasteboard = null;
-					h.CustomSelectedItems = null;
-					return h.Control.AllowedOperation != null;
+					return h.Control.DragInfo != null;
 				}
 
 				return false;
@@ -493,12 +532,43 @@ namespace Eto.Mac.Forms.Controls
 				set { WeakHandler = new WeakReference(value); }
 			}
 
-			public NSDragOperation? AllowedOperation { get; set; }
+			internal GridDragInfo DragInfo { get; set; }
+
+#if XAMMAC2
+			public override NSImage DragImageForRowsWithIndexestableColumnseventoffset(NSIndexSet dragRows, NSTableColumn[] tableColumns, NSEvent dragEvent, ref CGPoint dragImageOffset)
+			{
+				var img = DragInfo?.DragImage;
+				if (img != null)
+				{
+					dragImageOffset = DragInfo.GetDragImageOffset();
+					return img;
+				}
+				return base.DragImageForRowsWithIndexestableColumnseventoffset(dragRows, tableColumns, dragEvent, ref dragImageOffset);
+			}
+#else
+			static readonly IntPtr selDragImageForRowsWithIndexes_TableColumns_Event_Offset_Handle = Selector.GetHandle("dragImageForRowsWithIndexes:tableColumns:event:offset:");
+
+			[Export("dragImageForRowsWithIndexes:tableColumns:event:offset:")]
+			public NSImage DragImageForRows(NSIndexSet dragRows, NSTableColumn[] tableColumns, NSEvent dragEvent, ref CGPoint dragImageOffset)
+			{
+				var img = DragInfo?.DragImage;
+				if (img != null)
+				{
+					dragImageOffset = DragInfo.GetDragImageOffset();
+					return img;
+				}
+
+				NSArray nSArray = NSArray.FromNSObjects(tableColumns);
+				NSImage result = Runtime.GetNSObject<NSImage>(Messaging.IntPtr_objc_msgSendSuper_IntPtr_IntPtr_IntPtr_ref_CGPoint(SuperHandle, selDragImageForRowsWithIndexes_TableColumns_Event_Offset_Handle, dragRows.Handle, nSArray.Handle, dragEvent.Handle, ref dragImageOffset));
+				nSArray.Dispose();
+				return result;
+			}
+#endif
 
 			[Export("draggingSession:sourceOperationMaskForDraggingContext:")]
 			public NSDragOperation DraggingSessionSourceOperationMask(NSDraggingSession session, IntPtr context)
 			{
-				return AllowedOperation ?? NSDragOperation.None;
+				return DragInfo?.AllowedOperation ?? NSDragOperation.None;
 			}
 
 			public override void MouseDown(NSEvent theEvent)
@@ -554,8 +624,11 @@ namespace Eto.Mac.Forms.Controls
 
 			public override void Layout()
 			{
+				if (MacView.NewLayout)
+					base.Layout();
 				Handler?.PerformLayout();
-				base.Layout();
+				if (!MacView.NewLayout)
+					base.Layout();
 			}
 		}
 
@@ -957,17 +1030,22 @@ namespace Eto.Mac.Forms.Controls
 			set { Widget.Properties.Set(CustomSelectedItems_Key, value); }
 		}
 
-		public override void DoDragDrop(DataObject data, DragEffects allowedAction)
+		public override void DoDragDrop(DataObject data, DragEffects allowedAction, Image image, PointF origin)
 		{
 			if (DragPasteboard != null)
 			{
 				var handler = data.Handler as IDataObjectHandler;
 				handler?.Apply(DragPasteboard);
-				Control.AllowedOperation = allowedAction.ToNS();
+				Control.DragInfo = new GridDragInfo
+				{
+					AllowedOperation = allowedAction.ToNS(),
+					DragImage = image.ToNS(),
+					ImageOffset = origin
+				};
 			}
 			else
 			{
-				base.DoDragDrop(data, allowedAction);
+				base.DoDragDrop(data, allowedAction, image, origin);
 			}
 		}
 

@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net45</TargetFramework>
+    <TargetFrameworks>net45</TargetFrameworks>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
     <RootNamespace>Eto.GtkSharp</RootNamespace>
     <DefineConstants>$(DefineConstants);CAIRO;GTK3</DefineConstants>
@@ -22,7 +22,7 @@ Include this along with your Eto.Forms application to provide a GTK3 interface, 
       
 You do not need to use any of the classes of this assembly (unless customizing the GTK functionality of the platform), and should just use the UI controls from the Eto assembly.
       
-On Linux, mono framework 4.6 or higher and gtk-sharp3 are required.
+On Linux, mono framework 5.10 or higher and gtk-sharp3 are required.
     </PackageDescription>
   </PropertyGroup>
 
@@ -99,9 +99,14 @@ On Linux, mono framework 4.6 or higher and gtk-sharp3 are required.
   <ItemGroup>
     <Compile Condition=" '$(EnableDefaultCompileItems)' == 'true' " Update="NativeMethods.cs">
       <DependentUpon>NativeMethods.tt</DependentUpon>
+      <DesignTime>True</DesignTime>
+      <AutoGen>True</AutoGen>
     </Compile>
     <Compile Condition=" '$(EnableDefaultCompileItems)' == 'true' " Update="Forms\EtoControls.cs">
       <DependentUpon>EtoControls.tt</DependentUpon>
     </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <Service Include="{508349b6-6b84-4df5-91f0-309beebad82d}" />
   </ItemGroup>
 </Project>

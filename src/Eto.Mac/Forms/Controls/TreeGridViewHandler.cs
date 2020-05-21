@@ -151,21 +151,10 @@ namespace Eto.Mac.Forms.Controls
 				var etoItem = h.GetEtoItem(item);
 				var row = h.Control.RowForItem(item);
 
-				var args = new GridViewCellEventArgs(colHandler.Widget, (int)row, colHandler.Column, item);
+				var args = new GridViewCellEventArgs(colHandler.Widget, (int)row, colHandler.Column, etoItem);
 				h.Callback.OnCellEditing(h.Widget, args);
 				h.SetIsEditing(true);
 				return true;
-			}
-
-			public override void SelectionIsChanging(NSNotification notification)
-			{
-				var theEvent = NSApplication.SharedApplication.CurrentEvent;
-				if (theEvent.ButtonMask != 0)
-				{
-					// user is dragging the mouse, fire mouse move notifications
-					var args = MacConversions.GetMouseEvent(Handler, theEvent, false);
-
-				}
 			}
 
 			public override void SelectionDidChange(NSNotification notification)
@@ -173,6 +162,9 @@ namespace Eto.Mac.Forms.Controls
 				var h = Handler;
 				if (h.skipSelectionChanged > 0)
 					return;
+
+				// didn't start a drag (when this was set), so clear this out when the selection changes
+				h.CustomSelectedItems = null;
 
 				h.Callback.OnSelectionChanged(h.Widget, EventArgs.Empty);
 				var item = h.SelectedItem;
@@ -259,11 +251,40 @@ namespace Eto.Mac.Forms.Controls
 				}
 			}
 
+			public override nfloat GetSizeToFitColumnWidth(NSOutlineView outlineView, nint column)
+			{
+				var colHandler = Handler.GetColumn(outlineView.TableColumns()[column]);
+				if (colHandler != null)
+				{
+					// turn on autosizing for this column again
+					Application.Instance.AsyncInvoke(() => colHandler.AutoSize = true);
+					return colHandler.GetPreferredWidth();
+				}
+				return 20;
+			}
+
 			public override void DidClickTableColumn(NSOutlineView outlineView, NSTableColumn tableColumn)
 			{
 				var column = Handler.GetColumn(tableColumn);
-				var args = new GridColumnEventArgs(column.Widget);
-				Handler.Callback.OnColumnHeaderClick(Handler.Widget, args);
+				if (column.Sortable)
+				{
+					var args = new GridColumnEventArgs(column.Widget);
+					Handler.Callback.OnColumnHeaderClick(Handler.Widget, args);
+				}
+			}
+
+			public override void ColumnDidResize(NSNotification notification)
+			{
+				if (!Handler.IsAutoSizingColumns)
+				{
+					// when the user resizes the column, don't autosize anymore when data/scroll changes
+					var column = notification.UserInfo["NSTableColumn"] as NSTableColumn;
+					if (column != null)
+					{
+						var colHandler = Handler.GetColumn(column);
+						colHandler.AutoSize = false;
+					}
+				}
 			}
 
 			public override NSView GetView(NSOutlineView outlineView, NSTableColumn tableColumn, NSObject item)
@@ -613,7 +634,7 @@ namespace Eto.Mac.Forms.Controls
 			{
 				Delegate = new EtoOutlineDelegate { Handler = handler };
 				//HeaderView = null,
-				//AutoresizesOutlineColumn = true,
+				AutoresizesOutlineColumn = false;
 				//AllowsColumnResizing = false,
 				AllowsColumnReordering = false;
 				FocusRingType = NSFocusRingType.None;
@@ -650,7 +671,15 @@ namespace Eto.Mac.Forms.Controls
 							e.Handled = true;
 						}
 					};
-					Control.DoubleClick += HandleDoubleClick;
+					Widget.MouseDoubleClick += (sender, e) =>
+					{
+						var cell = GetCellAt(e.Location, out var column);
+						if (cell != null)
+						{
+							Callback.OnActivated(Widget, new TreeGridViewItemEventArgs(SelectedItem));
+							e.Handled = true;
+						}
+					};
 					break;
 				case TreeGridView.ExpandedEvent:
 				case TreeGridView.ExpandingEvent:
@@ -672,15 +701,6 @@ namespace Eto.Mac.Forms.Controls
 				default:
 					base.AttachEvent(id);
 					break;
-			}
-		}
-
-		static void HandleDoubleClick(object sender, EventArgs e)
-		{
-			var handler = GetHandler(sender) as TreeGridViewHandler;
-			if (handler != null)
-			{
-				handler.Callback.OnActivated(handler.Widget, new TreeGridViewItemEventArgs(handler.SelectedItem));
 			}
 		}
 

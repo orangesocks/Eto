@@ -12,6 +12,7 @@ using System.ComponentModel;
 using Eto.Wpf.Forms.Menu;
 using Eto.Drawing;
 using Eto.Wpf.Drawing;
+using Eto.Wpf.CustomControls.TreeGridView;
 
 namespace Eto.Wpf.Forms.Controls
 {
@@ -52,6 +53,24 @@ namespace Eto.Wpf.Forms.Controls
 			}
 		}
 
+		public EtoDataGrid()
+		{
+			Loaded += EtoDataGrid_Loaded;
+		}
+
+		private void EtoDataGrid_Loaded(object sender, sw.RoutedEventArgs e)
+		{
+			var scp = this.FindChild<swc.ScrollContentPresenter>();
+			if (scp != null) scp.RequestBringIntoView += OnRequestBringIntoView;
+		}
+
+		private void OnRequestBringIntoView(object sender, sw.RequestBringIntoViewEventArgs e)
+		{
+			var h = Handler as IGridHandler;
+			if (h == null)
+				return;
+			e.Handled = h.DisableAutoScrollToSelection;
+		}
 	}
 
 	class GridDragRowState
@@ -129,6 +148,7 @@ namespace Eto.Wpf.Forms.Controls
 				GridLinesVisibility = swc.DataGridGridLinesVisibility.None,
 				Background = sw.SystemColors.WindowBrush
 			};
+			Control.MouseUp += HandleOutsideMouseUp;
 		}
 
 		protected ColumnCollection Columns { get; private set; }
@@ -318,39 +338,77 @@ namespace Eto.Wpf.Forms.Controls
 		{
 			base.HandleMouseUp(sender, e);
 
+			var hitTestResult = swm.VisualTreeHelper.HitTest(Control, e.GetPosition(Control))?.VisualHit;
+			var cell = hitTestResult?.GetVisualParent<swc.DataGridCell>();
+			var row = hitTestResult?.GetVisualParent<swc.DataGridRow>();
+
 			var info = MultipleSelectionInfo;
 			if (!e.Handled && info != null)
 			{
-				// in multiple selection, only set selection to current row if the mouse hasn't moved to a different row
-				var hitTestResult = swm.VisualTreeHelper.HitTest(Control, e.GetPosition(Control))?.VisualHit;
-				var row = hitTestResult?.GetVisualParent<swc.DataGridRow>();
 				if (ReferenceEquals(row, info.Row))
 				{
+					// in multiple selection, only set selection to current row if the mouse hasn't moved to a different row
 					bool hadMultipleSelection = Control.SelectedItems.Count > 1;
 					Control.SelectedItem = row.Item;
-					var cell = hitTestResult?.GetVisualParent<swc.DataGridCell>();
 					if (cell != null)
 					{
-						Callback.OnCellClick(Widget, CreateCellMouseArgs(cell, e));
-						cell.Focus();
-						if (!hadMultipleSelection && !cell.Column.IsReadOnly && ReferenceEquals(info.Cell, cell))
+						var args = CreateCellMouseArgs(cell, e);
+						Callback.OnCellClick(Widget, args);
+						if (!args.Handled)
 						{
-							Control.BeginEdit();
-							// we double clicked to fire this event, so trigger a double click event
-							if (info.ClickCount >= 2)
-								Callback.OnCellDoubleClick(Widget, CreateCellMouseArgs(cell, e));
+							if (!hadMultipleSelection && ReferenceEquals(info.Cell, cell))
+							{
+								// we double clicked to fire this event, so trigger a double click event
+								if (info.ClickCount >= 2)
+									Callback.OnCellDoubleClick(Widget, args);
+								if (!args.Handled)
+								{
+									if (TreeTogglePanel.IsOverContent(hitTestResult) != false)
+									{
+										// let the column handler perform something specific if needed
+										var columnHandler = args.GridColumn?.Handler as GridColumnHandler;
+										columnHandler?.OnMouseUp(args, hitTestResult, cell);
+
+										if (!args.Handled && !cell.Column.IsReadOnly)
+										{
+											cell.Focus();
+											Control.BeginEdit();
+										}
+
+										e.Handled = true; // prevent default behaviour
+									}
+								}
+							}
+							else
+								cell.Focus();
+						}
+						else
+						{
+							row.Focus();
+							e.Handled = true;
 						}
 					}
-					else
-						row.Focus();
-					e.Handled = true;
 				}
 
 				MultipleSelectionInfo = null;
-			}
-			if (!e.Handled && AllowEmptySelection)
+			}			
+
+			if (!e.Handled && cell != null && TreeTogglePanel.IsOverContent(hitTestResult) != false)
 			{
-				var hitTestResult = swm.VisualTreeHelper.HitTest(Control, e.GetPosition(Control))?.VisualHit;
+				var args = CreateCellMouseArgs(cell, e);
+				// let the column handler perform something specific if needed
+				var columnHandler = args.GridColumn?.Handler as GridColumnHandler;
+				columnHandler?.OnMouseUp(args, hitTestResult, cell);
+				e.Handled = args.Handled;
+			}
+		}
+
+
+		private void HandleOutsideMouseUp(object sender, swi.MouseButtonEventArgs e)
+		{
+			var hitTestResult = swm.VisualTreeHelper.HitTest(Control, e.GetPosition(Control))?.VisualHit;
+			if (!e.Handled)
+			{
 				if (hitTestResult != null
 					&& (
 						hitTestResult is swc.ScrollViewer // below rows
@@ -358,10 +416,13 @@ namespace Eto.Wpf.Forms.Controls
 						)
 					)
 				{
-					UnselectAll();
-					e.Handled = true;
+					CommitEdit();
+					if (AllowEmptySelection)
+					{
+						UnselectAll();
+						e.Handled = true;
+					}
 				}
-
 			}
 		}
 
@@ -382,7 +443,8 @@ namespace Eto.Wpf.Forms.Controls
 					&& (
 						(cell?.Column.IsReadOnly == false && !cell.IsEditing && cell.IsFocused)
 						|| Control.SelectedItems.Count > 1
-					))
+					)
+				)
 				{
 					MultipleSelectionInfo = new SelectionInfo
 					{
@@ -395,6 +457,21 @@ namespace Eto.Wpf.Forms.Controls
 					else
 						row.Focus();
 					e.Handled = true;
+				} 
+				else if (cell?.IsEditing == true)
+				{
+					// allow clicking on the image of an ImageTextCell to commit editing.
+					var args = CreateCellMouseArgs(cell, e); 
+					var columnHandler = args.GridColumn?.Handler as GridColumnHandler;
+					columnHandler?.OnMouseDown(args, hitTestResult, cell);
+					e.Handled = args.Handled;
+
+					if (!args.Handled && TreeTogglePanel.IsOverContent(hitTestResult) == false)
+					{
+						// clicked outside of content area in TreeGridView, so we should commit editing.
+						CommitEdit();
+						e.Handled = true;
+					}
 				}
 			}
 			else if (!e.Handled
@@ -740,6 +817,7 @@ namespace Eto.Wpf.Forms.Controls
 			get => Widget.Properties.Get<bool>(GridHandler.AllowEmptySelection_Key, true);
 			set => Widget.Properties.Set(GridHandler.AllowEmptySelection_Key, value, true);
 		}
+		public bool DisableAutoScrollToSelection { get; set; }
 
 		protected void EnsureSelection()
 		{

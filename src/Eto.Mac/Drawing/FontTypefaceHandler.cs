@@ -2,6 +2,8 @@ using System;
 using Eto.Drawing;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Collections.Generic;
+using Eto.Forms;
 
 
 #if XAMMAC2
@@ -28,6 +30,8 @@ namespace Eto.Mac.Drawing
 		string _name;
 		static readonly object LocalizedName_Key = new object();
 
+		public NSFont Font => _font ?? (_font = CreateFont(10));
+
 		public string PostScriptName { get; private set; }
 
 		public int Weight { get; private set; }
@@ -44,7 +48,7 @@ namespace Eto.Mac.Drawing
 
 		public FontTypefaceHandler(NSFont font, NSFontTraitMask? traits = null)
 		{
-			this._font = font;
+			_font = font;
 			var descriptor = font.FontDescriptor;
 			PostScriptName = descriptor.PostscriptName;
 			var manager = NSFontManager.SharedFontManager;
@@ -72,9 +76,7 @@ namespace Eto.Mac.Drawing
 			{
 				if (_name == null)
 				{
-					if (_font == null)
-						_font = CreateFont(10);
-					_name = GetName(_font.Handle);
+					_name = GetName(Font.Handle);
 
 					/*
 					var manager = NSFontManager.SharedFontManager;
@@ -103,11 +105,8 @@ namespace Eto.Mac.Drawing
 
 		string GetLocalizedName()
 		{
-			if (_font == null)
-				_font = CreateFont(10);
-
 			// no (easy) way to get a CTFont from an NSFont
-			var localizedNamePtr = CTFontCopyLocalizedName(_font.Handle, CTFontNameKeySubFamily.Handle, out var actualLanguagePtr);
+			var localizedNamePtr = CTFontCopyLocalizedName(Font.Handle, CTFontNameKeySubFamily.Handle, out var actualLanguagePtr);
 			var actualLanguage = Runtime.GetNSObject<NSString>(actualLanguagePtr);
 			var localizedName = Runtime.GetNSObject<NSString>(localizedNamePtr);
 
@@ -116,31 +115,45 @@ namespace Eto.Mac.Drawing
 
 		public FontStyle FontStyle => Traits.ToEto();
 
+		static string SystemFontName => NSFont.SystemFontOfSize(NSFont.SystemFontSize).FontDescriptor.PostscriptName;
+		static string BoldSystemFontName => NSFont.BoldSystemFontOfSize(NSFont.SystemFontSize).FontDescriptor.PostscriptName;
+
+		public bool IsSymbol => Font.FontDescriptor.SymbolicTraits.HasFlag(NSFontSymbolicTraits.SymbolicClass);
+
 		public NSFont CreateFont(float size)
 		{
 
 			// we have a postcript name, use that to create the font
 			if (!string.IsNullOrEmpty(PostScriptName))
 			{
-				var font = NSFont.FromFontName(PostScriptName, size);
-				if (font == null)
-				{
-					// macOS 10.15 returns null for the above API for system fonts (when compiled using xcode 11).
-					font = NSFont.SystemFontOfSize(size);
-					if (font.FontDescriptor.PostscriptName == PostScriptName)
-						return font;
-					font = NSFont.BoldSystemFontOfSize(size);
-					if (font.FontDescriptor.PostscriptName == PostScriptName)
-						return font;
+				// if we try to get a system font by name we get errors now..
+				if (PostScriptName == SystemFontName)
+					return NSFont.SystemFontOfSize(size);
+				if (PostScriptName == BoldSystemFontName)
+					return NSFont.BoldSystemFontOfSize(size);
 
-					// always return something..?
-					return NSFont.UserFontOfSize(size);
-				}
+				// always return something...
+				var font = NSFont.FromFontName(PostScriptName, size) ?? NSFont.UserFontOfSize(size);
 				return font;
 			}
 
 			var family = (FontFamilyHandler)Widget.Family.Handler;
 			return FontHandler.CreateFont(family.MacName, size, Traits, Weight);
+		}
+
+		public bool HasCharacterRanges(IEnumerable<Range<int>> ranges)
+		{
+			var charSet = Font.CoveredCharacterSet;
+
+			foreach (var range in ranges)
+			{
+				for (int i = range.Start; i <= range.End; i++)
+				{
+					if (!charSet.Contains((char)i))
+						return false;
+				}
+			}
+			return true;
 		}
 	}
 }

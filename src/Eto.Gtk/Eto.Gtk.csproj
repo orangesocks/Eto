@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
+    <TargetFrameworks>netstandard2.0</TargetFrameworks>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
     <RootNamespace>Eto.GtkSharp</RootNamespace>
     <DefineConstants>$(DefineConstants);GTK3;GTKCORE</DefineConstants>
@@ -18,12 +18,12 @@ Include this along with your Eto.Forms application to provide a GTK interface, t
 
 You do not need to use any of the classes of this assembly (unless customizing the GTK functionality of the platform), and should just use the UI controls from the Eto assembly.
 
-On Linux, mono framework 2.10 or higher and gtk-sharp2 are required.
+When building for the full framework, .NET Framework 4.6.1 or mono framework 5.10 or higher is required.
     </PackageDescription>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="GtkSharp" Version="3.22.25.56" />
+    <PackageReference Include="GtkSharp" Version="3.22.25.74" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Eto\Eto.csproj" />

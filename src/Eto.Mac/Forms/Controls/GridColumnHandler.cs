@@ -60,6 +60,8 @@ namespace Eto.Mac.Forms.Controls
 		Grid Widget { get; }
 
 		bool SuppressUpdate { get; }
+
+		bool IsCancellingEdit { get; }
 	}
 
 	public interface IDataColumnHandler
@@ -213,8 +215,12 @@ namespace Eto.Mac.Forms.Controls
 
 		public int Width
 		{
-			get { return (int)Math.Ceiling(Control.Width) + 3; }
-			set { Control.Width = Math.Max(0, value - 3); }
+			get => (int)Math.Ceiling(Control.Width) + 3;
+			set
+			{ 
+				AutoSize = value == -1;
+				Control.Width = Math.Max(0, value - 3);
+			}
 		}
 
 		public bool Visible

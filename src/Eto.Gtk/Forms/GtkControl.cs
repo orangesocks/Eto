@@ -472,7 +472,7 @@ namespace Eto.GtkSharp.Forms
 		/// </summary>
 		protected class GtkControlConnector : WeakConnector
 		{
-			bool isDragOver;
+			DragEffects? _dragEnterEffects;
 			protected DragEventArgs DragArgs { get; private set; }
 
 			new GtkControl<TControl, TWidget, TCallback> Handler { get { return (GtkControl<TControl, TWidget, TCallback>)base.Handler; } }
@@ -708,9 +708,12 @@ namespace Eto.GtkSharp.Forms
 			[GLib.ConnectBefore]
 			public virtual void HandleDragDataGet(object o, Gtk.DragDataGetArgs args)
 			{
-				var data = Handler?.DragInfo.Data.Handler as DataObjectHandler;
-				data?.Apply(args.SelectionData);
-				args.RetVal = true;
+				var data = Handler?.DragInfo?.Data.Handler as DataObjectHandler;
+				if (data != null)
+				{
+					data.Apply(args.SelectionData);
+					args.RetVal = true;
+				}
 			}
 
 			[GLib.ConnectBefore]
@@ -723,19 +726,26 @@ namespace Eto.GtkSharp.Forms
 				args.RetVal = true;
 			}
 
+
+
 			[GLib.ConnectBefore]
 			public virtual void HandleDragMotion(object o, Gtk.DragMotionArgs args)
 			{
 				DragArgs = GetDragEventArgs(args.Context, new PointF(args.X, args.Y), args.Time);
 
-				if (!isDragOver)
+				if (_dragEnterEffects == null)
+				{
 					Handler.Callback.OnDragEnter(Handler.Widget, DragArgs);
+					_dragEnterEffects = DragArgs.Effects;
+				}
 				else
+				{
+					DragArgs.Effects = _dragEnterEffects.Value;
 					Handler.Callback.OnDragOver(Handler.Widget, DragArgs);
+				}
 
 				Gdk.Drag.Status(args.Context, DragArgs.Effects.ToGdk(), args.Time);
 
-				isDragOver = true;
 				args.RetVal = true;
 			}
 
@@ -744,7 +754,7 @@ namespace Eto.GtkSharp.Forms
 				// use old args in case of a drop so we use the last motion args to determine position of drop for TreeGridView/GridView.
 				DragArgs = DragArgs ?? GetDragEventArgs(args.Context, Handler.PointFromScreen(Mouse.Position), args.Time);
 				Handler.Callback.OnDragLeave(Handler.Widget, DragArgs);
-				isDragOver = false;
+				_dragEnterEffects = null;
 				Eto.Forms.Application.Instance.AsyncInvoke(() => DragArgs = null);
 			}
 

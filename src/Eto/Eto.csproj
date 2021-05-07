@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>netstandard1.0;netstandard2.0</TargetFrameworks>
+    <TargetFrameworks>netstandard2.0;netstandard1.0</TargetFrameworks>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <TreatWarningsAsErrors Condition="$(Configuration) == 'Release'">true</TreatWarningsAsErrors>
   </PropertyGroup>
@@ -40,6 +40,8 @@ https://github.com/picoe/Eto/wiki
     <Compile Include="..\Shared\EnumerableExtensions.cs" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="sdk\*" Pack="True" PackagePath="sdk" />
+    <None Include="$(BuildDir)\Xamarin.Mac.targets" Pack="True" PackagePath="sdk" />
     <None Remove="Eto.Forms.targets" />
     <None Include="Eto.Forms.targets" Pack="true" PackagePath="build" />
     <None Update="$(BasePath)LICENSE.txt" CopyToOutputDirectory="PreserveNewest" /> 

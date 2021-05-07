@@ -1,4 +1,4 @@
-﻿#if (UseCode || UseCodePreview)
+#if (UseCode || UseCodePreview)
 using System;
 using Eto.Forms;
 using Eto.Drawing;
@@ -14,7 +14,7 @@ namespace EtoApp._1
 #else
 #if IsWindow
 			Title = "My Eto Form";
-			ClientSize = new Size(400, 350);
+			MinimumSize = new Size(200, 200);
 #endif
 
 			Content = new StackLayout
@@ -44,9 +44,9 @@ namespace EtoApp._1
 				Items =
 				{
 					// File submenu
-					new ButtonMenuItem { Text = "&File", Items = { clickMe } },
-					// new ButtonMenuItem { Text = "&Edit", Items = { /* commands/items */ } },
-					// new ButtonMenuItem { Text = "&View", Items = { /* commands/items */ } },
+					new SubMenuItem { Text = "&File", Items = { clickMe } },
+					// new SubMenuItem { Text = "&Edit", Items = { /* commands/items */ } },
+					// new SubMenuItem { Text = "&View", Items = { /* commands/items */ } },
 				},
 				ApplicationItems =
 				{
@@ -57,7 +57,7 @@ namespace EtoApp._1
 				AboutItem = aboutCommand
 			};
 
-			// create toolbar			
+			// create toolbar
 			ToolBar = new ToolBar { Items = { clickMe } };
 #endif
 #endif

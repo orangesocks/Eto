@@ -109,7 +109,10 @@ namespace Eto.Designer.Completion
 					.Where(r => !context.Attributes.Contains(r.Name));
 			}
 			else if (mode == CompletionMode.Value && context != null && context.Mode == CompletionMode.Property)
-				items = completions.SelectMany(r => r.GetPropertyValues(path.Last(), context.LocalName, path));
+			{
+				var lastPath = path.Last();
+				items = completions.SelectMany(r => r.GetPropertyValues(lastPath, context.LocalName, path));
+			}
 			else
 			{
 				var filter = completions.Select(r => r.GetFilter(path)).FirstOrDefault(r => r != null);
@@ -131,6 +134,18 @@ namespace Eto.Designer.Completion
 						Prefix = ns.Prefix,
 						Assembly = typeof(Eto.Widget).Assembly,
 						Namespace = "Eto.Forms"
+					};
+					yield return new TypeCompletion
+					{
+						Prefix = ns.Prefix,
+						Assembly = typeof(Eto.Widget).Assembly,
+						Namespace = "Eto"
+					};
+					yield return new TypeCompletion
+					{
+						Prefix = ns.Prefix,
+						Assembly = typeof(Eto.Serialization.Xaml.XamlReader).Assembly,
+						Namespace = "Eto.Serialization.Xaml.Extensions"
 					};
 				}
 				if (ns.Namespace == XamlNamespace2006)

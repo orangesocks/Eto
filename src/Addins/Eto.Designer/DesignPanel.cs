@@ -23,6 +23,7 @@ namespace Eto.Designer
 		public DesignPanel()
 		{
 			designSurface = new DesignSurface();
+			designSurface.InvalidateContent += (sender, e) => Update(_code);
 			Border = BorderType.None;
 			BackgroundColor = Global.Theme.DesignerBackground;
 			Content = designSurface;
@@ -37,6 +38,7 @@ namespace Eto.Designer
 		public IEnumerable<string> References { get; set; }
 
 		IBuildToken token;
+		string _code;
 
 		public virtual void Update(string code)
 		{
@@ -46,7 +48,8 @@ namespace Eto.Designer
 			token?.Cancel();
 			try
 			{
-				token = interfaceBuilder.Create(code, MainAssembly, References, ControlCreatedInternal, ErrorInternal);
+				_code = code;
+				token = interfaceBuilder.Create(_code, MainAssembly, References, ControlCreatedInternal, ErrorInternal);
 			}
 			catch (Exception ex)
 			{
@@ -56,22 +59,26 @@ namespace Eto.Designer
 
 		public static Control GetContent(Control content)
 		{
-			var window = content as Window;
-			if (window != null)
+			if (content is Window window)
 			{
-				var size = window.ClientSize;
+				// mac defaults to 200, 200.. why..
+				var size = Platform.Instance.IsMac ? new Size(-1, -1) : window.ClientSize;
 				// some platforms report 0,0 even though it probably should be -1, -1 initially.
 				if (size.Width == 0)
 					size.Width = -1;
 				if (size.Height == 0)
 					size.Height = -1;
+				content = window.Content;
+				window.Content = null;
 				// swap out window for a panel so we can add it as a child
 				content = new Panel
 				{
-					BackgroundColor = Global.Theme.DesignerPanel,
+					BackgroundColor = window.BackgroundColor,
 					Padding = window.Padding,
+					StyleProvider = window.StyleProvider,
+					MinimumSize = window.MinimumSize,
 					Size = size,
-					Content = window.Content
+					Content = content
 				};
 			}
 			else
@@ -85,17 +92,19 @@ namespace Eto.Designer
 			return content;
 		}
 
-		#pragma warning disable 414
+#pragma warning disable 414
 		Control contentControl;
-		#pragma warning restore 414
+#pragma warning restore 414
 
 		void ControlCreatedInternal(Control control)
 		{
 			try
 			{
 				ControlCreating?.Invoke();
+				var old = contentControl;
 				contentControl = control;
 				designSurface.Content = GetContent(control);
+				old?.Dispose();
 				token = null;
 				ControlCreated?.Invoke();
 			}

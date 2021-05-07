@@ -23,6 +23,12 @@
     <!-- Ignore errors/warnings about semver 2.0 when packing CI builds -->
     <NoWarn>$(NoWarn);NU5105</NoWarn>
   </PropertyGroup>
-  
+
+  <!-- support t4 templates in projects -->
+  <ItemGroup>
+    <TextTemplate Include="**\*.tt" />
+    <AvailableItemName Include="TextTemplate" />
+  </ItemGroup>
+
   <Import Condition="Exists('$(BasePath)..\Eto.Common.props')" Project="$(BasePath)..\Eto.Common.props" />
 </Project>

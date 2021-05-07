@@ -1,6 +1,7 @@
 using System;
 using Eto.Forms;
 using Eto.Mac.Forms.Controls;
+using Eto.Drawing;
 
 #if XAMMAC2
 using AppKit;
@@ -51,6 +52,13 @@ namespace Eto.Mac.Forms.Controls
 				get { return Handler.MaxLength; }
 			}
 
+			EtoFormatter formatter;
+
+			public EtoSecureTextField(IntPtr handle)
+				: base(handle)
+			{
+			}
+
 			public EtoSecureTextField()
 			{
 				Bezeled = true;
@@ -59,7 +67,7 @@ namespace Eto.Mac.Forms.Controls
 				Cell.Scrollable = true;
 				Cell.Wraps = false;
 				Cell.UsesSingleLineMode = true;
-				Formatter = new EtoFormatter { Handler = this };
+				Formatter = formatter = new EtoFormatter { Handler = this };
 			}
 		}
 
@@ -71,6 +79,13 @@ namespace Eto.Mac.Forms.Controls
 					return false;
 				return ((IMacWindow)Widget.ParentWindow.Handler).FieldEditorClient == Control;
 			}
+		}
+
+		protected override SizeF GetNaturalSize(SizeF availableSize)
+		{
+			var size = base.GetNaturalSize(availableSize);
+			size.Width = Math.Max(100, size.Height);
+			return size;
 		}
 
 		protected override NSTextField CreateControl()

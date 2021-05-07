@@ -9,12 +9,14 @@ using System.Collections.Generic;
 using AppKit;
 using Foundation;
 using ObjCRuntime;
+using MobileCoreServices;
 #else
 using MonoMac.AppKit;
 using MonoMac.Foundation;
 using MonoMac.CoreGraphics;
 using MonoMac.ObjCRuntime;
 using MonoMac.CoreAnimation;
+using MonoMac.MobileCoreServices;
 #if Mac64
 using nfloat = System.Double;
 using nint = System.Int64;
@@ -47,11 +49,7 @@ namespace Eto.Mac.Forms
 		public class StringItem : BaseItem
 		{
 			public string Value { get; set; }
-			public override void Apply(NSPasteboard pasteboard, string type)
-			{
-				//pasteboard.DeclareTypes(new[] { type }, null);
-				pasteboard.SetStringForType(Value, type);
-			}
+			public override void Apply(NSPasteboard pasteboard, string type) => pasteboard.SetStringForType(Value, type);
 			public override void Apply(NSPasteboardItem item, string type) => item.SetStringForType(Value, type);
 		}
 
@@ -208,7 +206,7 @@ namespace Eto.Mac.Forms
 				{
 					if (pasteboardItem == null)
 						pasteboardItem = new NSPasteboardItem();
-					item.Value.Apply(pasteboardItem, item.Key);
+					item.Value?.Apply(pasteboardItem, item.Key);
 				}
 			}
 			if (pasteboardItem != null)

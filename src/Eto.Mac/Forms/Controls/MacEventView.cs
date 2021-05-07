@@ -54,7 +54,7 @@ namespace Eto.Mac.Forms.Controls
 
 		public IMacViewHandler Handler
 		{ 
-			get { return (IMacViewHandler)WeakHandler.Target; }
+			get { return WeakHandler?.Target as IMacViewHandler; }
 			set { WeakHandler = new WeakReference(value); } 
 		}
 
@@ -157,6 +157,12 @@ namespace Eto.Mac.Forms.Controls
 				AddCursorRect(new CGRect(CGPoint.Empty, Frame.Size), cursor.ControlObject as NSCursor);
 			}
 		}
+
+		public override bool AcceptsFirstMouse(NSEvent theEvent)
+		{
+			return Handler?.OnAcceptsFirstMouse(theEvent) ?? base.AcceptsFirstMouse(theEvent);
+		}
+
 	}
 }
 

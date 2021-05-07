@@ -77,7 +77,8 @@ namespace Eto.GtkSharp
 			Style.Add<ThemedStepperHandler>(null, h =>
 			{
 				h.Orientation = Orientation.Horizontal;
-				h.Widget.Size = new Size(50, 30);
+				h.Widget.Size = new Size(-1, -1);
+				h.Font = SystemFonts.Default();
 				if (h.Control.Content.Handler is TableLayoutHandler table)
 				{
 					table.Control.StyleContext.AddClass("linked");
@@ -183,6 +184,7 @@ namespace Eto.GtkSharp
 			p.Add<MenuBar.IHandler>(() => new MenuBarHandler());
 			p.Add<RadioMenuItem.IHandler>(() => new RadioMenuItemHandler());
 			p.Add<SeparatorMenuItem.IHandler>(() => new SeparatorMenuItemHandler());
+			p.Add<SubMenuItem.IHandler>(() => new SubMenuItemHandler());
 			
 			// Forms.Printing
 			p.Add<PrintDialog.IHandler>(() => new PrintDialogHandler());

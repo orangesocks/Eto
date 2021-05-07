@@ -3,6 +3,8 @@ using sd = System.Drawing;
 using Eto.Forms;
 using Eto.WinForms.Forms.Cells;
 using System;
+using System.Diagnostics;
+using System.Windows.Forms;
 
 namespace Eto.WinForms.Forms.Controls
 {
@@ -10,17 +12,32 @@ namespace Eto.WinForms.Forms.Controls
 	public class GridColumnHandler : WidgetHandler<swf.DataGridViewColumn, GridColumn>, GridColumn.IHandler, ICellConfigHandler
 	{
 		Cell dataCell;
-		bool autosize;
+
+		class EtoDataGridViewColumn : swf.DataGridViewColumn
+		{
+			public GridColumnHandler Handler { get; set; }
+
+			public override int GetPreferredWidth(DataGridViewAutoSizeColumnMode autoSizeColumnMode, bool fixedHeight)
+			{
+				return Math.Min(Handler.MaxWidth, base.GetPreferredWidth(autoSizeColumnMode, fixedHeight));
+			}
+
+		}
 
 		public IGridHandler GridHandler { get; private set; }
 
 		public GridColumnHandler()
 		{
-			Control = new swf.DataGridViewColumn();
+			Control = new EtoDataGridViewColumn { Handler = this };
 			DataCell = new TextBoxCell();
 			Editable = false;
-			AutoSize = true;
 			Resizable = true;
+		}
+
+		protected override void Initialize()
+		{
+			base.Initialize();
+			SetAutoSizeMode();
 		}
 
 		public string HeaderText
@@ -41,13 +58,15 @@ namespace Eto.WinForms.Forms.Controls
 			set { Control.SortMode = (value) ? swf.DataGridViewColumnSortMode.Programmatic : swf.DataGridViewColumnSortMode.NotSortable; }
 		}
 
+		static readonly object AutoSize_Key = new object();
+
 		public bool AutoSize
 		{
-			get { return autosize; }
+			get => Widget.Properties.Get<bool>(AutoSize_Key, true);
 			set
 			{
-				autosize = value;
-				Control.AutoSizeMode = (value) ? swf.DataGridViewAutoSizeColumnMode.NotSet : swf.DataGridViewAutoSizeColumnMode.None;
+				if (Widget.Properties.TrySet(AutoSize_Key, value, true))
+					SetAutoSizeMode();
 			}
 		}
 
@@ -91,6 +110,56 @@ namespace Eto.WinForms.Forms.Controls
 		}
 
 		public swf.DataGridViewColumn Column => Control;
+
+		static readonly object Expand_Key = new object();
+
+		public bool Expand
+		{
+			get => Widget.Properties.Get<bool>(Expand_Key);
+			set
+			{
+				if (Widget.Properties.TrySet(Expand_Key, value))
+				{
+					SetAutoSizeMode();
+				}
+			}
+		}
+
+		void SetAutoSizeMode()
+		{
+			if (Expand)
+				Control.AutoSizeMode = swf.DataGridViewAutoSizeColumnMode.Fill;
+			else if (AutoSize)
+				Control.AutoSizeMode = swf.DataGridViewAutoSizeColumnMode.DisplayedCells;
+			else
+				Control.AutoSizeMode = swf.DataGridViewAutoSizeColumnMode.None;
+		}
+
+		public TextAlignment HeaderTextAlignment
+		{
+			get => Control.HeaderCell.Style.Alignment.ToEtoTextAlignment();
+			set => Control.HeaderCell.Style.Alignment = value.ToSWFGridViewContentAlignment();
+		}
+		public int MinWidth { get => Control.MinimumWidth; set => Control.MinimumWidth = value; }
+
+		int maxWidth = int.MaxValue;
+		public int MaxWidth
+		{
+			get => maxWidth;
+			set
+			{
+				maxWidth = value;
+				if (AutoSize)
+				{
+					Control.DataGridView?.AutoResizeColumn(Control.Index);
+				}
+				else if (Control.Width > maxWidth)
+				{
+					Control.Width = maxWidth;
+				}
+
+			}
+		}
 
 		public void SetCellValue(object dataItem, object value)
 		{

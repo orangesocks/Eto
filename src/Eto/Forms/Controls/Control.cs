@@ -799,6 +799,28 @@ namespace Eto.Forms
 		}
 
 		/// <summary>
+		/// Gets the preferred size of this control given infinite space available.
+		/// </summary>
+		/// <returns>The size this control would prefer to be</returns>
+		public SizeF GetPreferredSize() => GetPreferredSize(SizeF.PositiveInfinity);
+
+		/// <summary>
+		/// Gets the preferred size of this control given the specified <paramref name="availableSize" />.
+		/// </summary>
+		/// <param name="availableSize">The available size to determine the preferred size</param>
+		/// <returns>The preferred size this control would like to be, which can be larger than the specified <paramref name="availableSize" />.</returns>
+		public SizeF GetPreferredSize(SizeF availableSize)
+		{
+			// hack for now for dynamic layouts.. this should be moved to the Measure infrastructure when implemented..
+			InternalEnsureLayout();
+			return Handler.GetPreferredSize(availableSize);
+		}
+
+		internal virtual void InternalEnsureLayout()
+		{
+		}
+
+		/// <summary>
 		/// Gets or sets the width of the control size.
 		/// </summary>
 		public virtual int Width
@@ -837,9 +859,7 @@ namespace Eto.Forms
 		/// Gets or sets a value indicating whether this <see cref="Eto.Forms.Control"/> is visible to the user.
 		/// </summary>
 		/// <remarks>
-		/// When the visibility of a control is set to false, it will still occupy space in the layout, but not be shown.
-		/// The only exception is for controls like the <see cref="Splitter"/>, which will hide a pane if the visibility
-		/// of one of the panels is changed.
+		/// When the visibility of a control is set to false, it will not occupy space in the layout.
 		/// </remarks>
 		/// <value><c>true</c> if visible; otherwise, <c>false</c>.</value>
 		[sc.DefaultValue(true)]
@@ -1910,6 +1930,13 @@ namespace Eto.Forms
 			/// </summary>
 			/// <returns>The parent window.</returns>
 			Window GetNativeParentWindow();
+
+			/// <summary>
+			/// Gets the preferred size of this control given the specified <paramref name="availableSize" />.
+			/// </summary>
+			/// <param name="availableSize">The available size to determine the preferred size</param>
+			/// <returns>The preferred size this control would like to be, which can be larger than the specified <paramref name="availableSize" />.</returns>
+			SizeF GetPreferredSize(SizeF availableSize);
 		}
 		#endregion
 	}

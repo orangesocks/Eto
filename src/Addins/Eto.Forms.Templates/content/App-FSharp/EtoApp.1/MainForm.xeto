@@ -2,9 +2,10 @@
 <Form
 	xmlns="http://schema.picoe.ca/eto.forms" 
 	xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+	xmlns:local="clr-namespace:EtoApp._1;assembly=EtoApp.1"
 <!--#if(IsWindow)-->
 	Title="My Eto Form"
-	ClientSize="400, 350"
+	MinimumSize="200,200"
 <!--#endif-->
 	Padding="10"
 	>
@@ -15,9 +16,9 @@
 <!--#if(IsForm)-->
 	<Form.Menu>
 		<MenuBar>
-			<ButtonMenuItem Text="F&amp;ile">
+			<SubMenuItem Text="&amp;File">
 				<ButtonMenuItem Text="Click Me!" Click="HandleClickMe" />
-			</ButtonMenuItem>
+			</SubMenuItem>
 			<MenuBar.ApplicationItems>
 				<ButtonMenuItem Text="Preferences.." Shortcut="{On Control+O, Mac=Application+Comma}" />
 			</MenuBar.ApplicationItems>

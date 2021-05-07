@@ -46,7 +46,7 @@ namespace Eto.Mac.Forms.Controls
 
 			public GridViewHandler Handler
 			{
-				get { return (GridViewHandler)WeakHandler.Target; }
+				get { return WeakHandler?.Target as GridViewHandler; }
 				set { WeakHandler = new WeakReference(value); }
 			}
 
@@ -135,17 +135,15 @@ namespace Eto.Mac.Forms.Controls
 				FocusRingType = NSFocusRingType.None;
 				DataSource = new EtoTableViewDataSource { Handler = handler };
 				Delegate = new EtoTableDelegate { Handler = handler };
-				ColumnAutoresizingStyle = NSTableViewColumnAutoresizingStyle.None;
+				ColumnAutoresizingStyle = NSTableViewColumnAutoresizingStyle.Uniform;
 				SetDraggingSourceOperationMask(NSDragOperation.All, true);
 				SetDraggingSourceOperationMask(NSDragOperation.All, false);
 			}
 
-			internal GridDragInfo DragInfo { get; set; }
-
 			[Export("draggingSession:sourceOperationMaskForDraggingContext:")]
 			public NSDragOperation DraggingSessionSourceOperationMask(NSDraggingSession session, IntPtr context)
 			{
-				return DragInfo?.AllowedOperation ?? NSDragOperation.None;
+				return Handler?.DragInfo?.AllowedOperation ?? NSDragOperation.None;
 			}
 
 			public override void Layout()
@@ -161,6 +159,13 @@ namespace Eto.Mac.Forms.Controls
 #if XAMMAC2
 			public override NSImage DragImageForRowsWithIndexestableColumnseventoffset(NSIndexSet dragRows, NSTableColumn[] tableColumns, NSEvent dragEvent, ref CGPoint dragImageOffset)
 			{
+				var dragInfo = Handler?.DragInfo;
+				var img = dragInfo?.DragImage;
+				if (img != null)
+				{
+					dragImageOffset = dragInfo.GetDragImageOffset();
+					return img;
+				}
 				return base.DragImageForRowsWithIndexestableColumnseventoffset(dragRows, tableColumns, dragEvent, ref dragImageOffset);
 			}
 #else
@@ -170,10 +175,11 @@ namespace Eto.Mac.Forms.Controls
 			[Export("dragImageForRowsWithIndexes:tableColumns:event:offset:")]
 			public NSImage DragImageForRows(NSIndexSet dragRows, NSTableColumn[] tableColumns, NSEvent dragEvent, ref CGPoint dragImageOffset)
 			{
-				var img = DragInfo?.DragImage;
+				var dragInfo = Handler?.DragInfo;
+				var img = dragInfo?.DragImage;
 				if (img != null)
 				{
-					dragImageOffset = DragInfo.GetDragImageOffset();
+					dragImageOffset = dragInfo.GetDragImageOffset();
 					return img;
 				}
 
@@ -310,7 +316,7 @@ namespace Eto.Mac.Forms.Controls
 
 				if (h.IsMouseDragging)
 				{
-					h.Control.DragInfo = null;
+					h.DragInfo = null;
 					// give MouseMove event a chance to start the drag
 					h.DragPasteboard = pboard;
 
@@ -343,7 +349,7 @@ namespace Eto.Mac.Forms.Controls
 					h.Callback.OnMouseMove(h.Widget, args);
 					h.DragPasteboard = null;
 
-					return h.Control.DragInfo != null;
+					return h.DragInfo != null;
 				}
 
 				return false;
@@ -410,16 +416,7 @@ namespace Eto.Mac.Forms.Controls
 
 			public override void ColumnDidResize(NSNotification notification)
 			{
-				if (!Handler.IsAutoSizingColumns)
-				{
-					// when the user resizes the column, don't autosize anymore when data/scroll changes
-					var column = notification.UserInfo["NSTableColumn"] as NSTableColumn;
-					if (column != null)
-					{
-						var colHandler = Handler.GetColumn(column);
-						colHandler.AutoSize = false;
-					}
-				}
+				Handler?.ColumnDidResize(notification);
 			}
 
 			public override NSView GetViewForItem(NSTableView tableView, NSTableColumn tableColumn, nint row)
@@ -640,33 +637,6 @@ namespace Eto.Mac.Forms.Controls
 			column = (int)Control.GetColumn(nslocation);
 			row = (int)Control.GetRow(nslocation);
 			return row >= 0 ? GetItem(row) : null;
-		}
-
-		static readonly object DragPasteboard_Key = new object();
-
-		NSPasteboard DragPasteboard
-		{
-			get { return Widget.Properties.Get<NSPasteboard>(DragPasteboard_Key); }
-			set { Widget.Properties.Set(DragPasteboard_Key, value); }
-		}
-
-		public override void DoDragDrop(DataObject data, DragEffects allowedAction, Image image, PointF origin)
-		{
-			if (DragPasteboard != null)
-			{
-				var handler = data.Handler as IDataObjectHandler;
-				handler?.Apply(DragPasteboard);
-				Control.DragInfo = new GridDragInfo
-				{
-					AllowedOperation = allowedAction.ToNS(),
-					DragImage = image.ToNS(),
-					ImageOffset = origin
-				};
-			}
-			else
-			{
-				base.DoDragDrop(data, allowedAction, image, origin);
-			}
 		}
 
 		public GridViewDragInfo GetDragInfo(DragEventArgs args) => args.ControlObject as GridViewDragInfo;

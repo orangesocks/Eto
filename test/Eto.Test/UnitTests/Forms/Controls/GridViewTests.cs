@@ -13,7 +13,7 @@ using System.Threading;
 namespace Eto.Test.UnitTests.Forms.Controls
 {
 	public abstract class GridTests<T> : TestBase
-		where T: Grid, new()
+		where T : Grid, new()
 	{
 		class GridTestItem : TreeGridItem
 		{
@@ -40,7 +40,8 @@ namespace Eto.Test.UnitTests.Forms.Controls
 					if (!CustomCell.SupportsControlView)
 					{
 						cell.GetPreferredWidth = args => 100;
-						cell.Paint += (sender, e) => {
+						cell.Paint += (sender, e) =>
+						{
 							e.Graphics.DrawText(SystemFonts.Default(), Brushes.Black, e.ClipRectangle, "Cell", alignment: FormattedTextAlignment.Center);
 						};
 					}
@@ -61,7 +62,8 @@ namespace Eto.Test.UnitTests.Forms.Controls
 
 						// ugly, there should be a better way to do this..
 						var colorBinding = textBox.Bind(c => c.TextColor, args, Binding.Property((CellEventArgs a) => a.CellTextColor).Convert(c => args.IsEditing ? SystemColors.ControlText : c));
-						args.PropertyChanged += (sender, e) => {
+						args.PropertyChanged += (sender, e) =>
+						{
 							if (e.PropertyName == nameof(CellEventArgs.IsEditing))
 								colorBinding.Update();
 						};
@@ -81,7 +83,7 @@ namespace Eto.Test.UnitTests.Forms.Controls
 				var customCell2 = new CustomCell();
 				customCell2.CreateCell = args =>
 				{
-					var dropDown = new DropDown { Items = { "Item 1", "Item 2", "Item 3" }};
+					var dropDown = new DropDown { Items = { "Item 1", "Item 2", "Item 3" } };
 
 					return dropDown;
 				};
@@ -100,7 +102,7 @@ namespace Eto.Test.UnitTests.Forms.Controls
 
 				grid.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(GridTestItem.Text)), HeaderText = "TextBoxCell", Editable = true });
 
-				var list = new List<GridTestItem>();
+				var list = new TreeGridItemCollection();
 				list.Add(new GridTestItem { Text = "Item 1" });
 				list.Add(new GridTestItem { Text = "Item 2" });
 				list.Add(new GridTestItem { Text = "Item 3" });
@@ -108,19 +110,22 @@ namespace Eto.Test.UnitTests.Forms.Controls
 
 				// using MouseDown so the buttons don't get focus
 				var beginEditButton = new Button { Text = "BeginEdit" };
-				beginEditButton.MouseDown += (sender, e) => {
+				beginEditButton.MouseDown += (sender, e) =>
+				{
 					grid.BeginEdit(1, 0);
 					e.Handled = true;
 				};
 
 				var commitEditButton = new Button { Text = "CommitEdit" };
-				commitEditButton.MouseDown += (sender, e) => {
+				commitEditButton.MouseDown += (sender, e) =>
+				{
 					grid.CommitEdit();
 					e.Handled = true;
 				};
 
 				var cancelEditButton = new Button { Text = "CancelEdit" };
-				cancelEditButton.MouseDown += (sender, e) => {
+				cancelEditButton.MouseDown += (sender, e) =>
+				{
 					grid.CancelEdit();
 					e.Handled = true;
 				};
@@ -132,7 +137,172 @@ namespace Eto.Test.UnitTests.Forms.Controls
 			});
 		}
 
+		public IEnumerable<object> CreateDataStore(int rows = 20)
+		{
+			var list = new TreeGridItemCollection();
+			for (int i = 0; i < rows; i++)
+			{
+				list.Add(new GridTestItem { Text = $"Item {i}", Values = new[] { $"col {i}.2", $"col {i}.3", $"col {i}.4" } });
+			}
+			return list;
+		}
+
+		[ManualTest]
+		[TestCase(0, -1)]
+		[TestCase(1, -1)]
+		[TestCase(2, -1)]
+		[TestCase(0, 1)]
+		[TestCase(1, 2)]
+		[TestCase(0, 2)]
+		public void ExpandedColumnShouldExpand(int columnToExpand, int secondColumn)
+		{
+			ManualForm("First Column should be expanded, and change size with the Grid", form =>
+			{
+				var grid = new T();
+				SetDataStore(grid, CreateDataStore());
+
+				grid.Columns.Add(new GridColumn { DataCell = new TextBoxCell { Binding = Binding.Property((GridTestItem m) => m.Text) } });
+				grid.Columns.Add(new GridColumn { DataCell = new TextBoxCell(0) });
+				grid.Columns.Add(new GridColumn { DataCell = new TextBoxCell(1) });
+
+				var expandColumn = grid.Columns[columnToExpand];
+				expandColumn.HeaderText = "Expanded";
+				expandColumn.Expand = true;
+
+				if (secondColumn != -1)
+				{
+					var expandColumn2 = grid.Columns[secondColumn];
+					expandColumn2.HeaderText = "Expanded2";
+					expandColumn2.Expand = true;
+				}
+
+				return grid;
+			});
+		}
+
+		[ManualTest]
+		[TestCase(0, -1)]
+		[TestCase(1, -1)]
+		[TestCase(2, -1)]
+		[TestCase(0, 1)]
+		[TestCase(1, 2)]
+		[TestCase(0, 2)]
+		public void ExpandedColumnShouldAutoSize(int columnToExpand, int secondColumn)
+		{
+			ManualForm("First Column should be expanded, and change size with the Grid", form =>
+			{
+				var grid = new T();
+				SetDataStore(grid, CreateDataStore());
+
+				grid.Columns.Add(new GridColumn { DataCell = new TextBoxCell { Binding = Binding.Property((GridTestItem m) => m.Text) } });
+				grid.Columns.Add(new GridColumn { DataCell = new TextBoxCell(0) });
+				grid.Columns.Add(new GridColumn { DataCell = new TextBoxCell(1) });
+
+				var expandColumn = grid.Columns[columnToExpand];
+				expandColumn.HeaderText = "Expanded";
+				expandColumn.Expand = true;
+
+				if (secondColumn != -1)
+				{
+					var expandColumn2 = grid.Columns[secondColumn];
+					expandColumn2.HeaderText = "Expanded2";
+					expandColumn2.Expand = true;
+				}
+
+				return TableLayout.AutoSized(grid);
+			});
+		}
+
+		[Test, ManualTest]
+		public void HeaderTextAlignmentShouldWork()
+		{
+			ManualForm("Check alignment for each header", form =>
+			{
+				var grid = new T();
+				grid.Height = 200;
+				SetDataStore(grid, CreateDataStore());
+
+				grid.Columns.Add(new GridColumn
+				{
+					DataCell = new TextBoxCell { Binding = Binding.Property((GridTestItem m) => m.Text) },
+					HeaderText = "Left Aligned",
+					Width = 200
+				});
+				grid.Columns.Add(new GridColumn
+				{
+					DataCell = new TextBoxCell(0),
+					HeaderText = "Also Left",
+					HeaderTextAlignment = TextAlignment.Left,
+					Width = 200
+				});
+				grid.Columns.Add(new GridColumn
+				{
+					DataCell = new TextBoxCell(1),
+					HeaderText = "Center",
+					HeaderTextAlignment = TextAlignment.Center,
+					Width = 200
+				});
+				grid.Columns.Add(new GridColumn
+				{
+					DataCell = new TextBoxCell(2),
+					HeaderText = "Right",
+					HeaderTextAlignment = TextAlignment.Right,
+					Width = 200
+				});
+
+				return grid;
+			});
+		}
+
+		[Test, ManualTest]
+		public void SettingWidthShouldDisableAutosize()
+		{
+			ManualForm("Width of column should be 300px and not change when scrolling",
+			form =>
+			{
+				var control = new T();
+				control.Width = 400;
+				control.Height = 200;
+				var column = new GridColumn
+				{
+					DataCell = new TextBoxCell(0),
+					AutoSize = true,
+					Width = 300, // setting width should set AutoSize to false
+					HeaderText = "Cell"
+				};
+				control.Columns.Add(column);
+
+				Assert.IsFalse(column.AutoSize, "#1");
+
+				var dd = new TreeGridItemCollection();
+				for (int i = 0; i < 1000; i++)
+				{
+					dd.Add(new TreeGridItem { Values = new[] { "Row " + i } });
+				}
+				SetDataStore(control, dd);
+
+				return control;
+			});
+		}
+
 		protected abstract void SetDataStore(T grid, IEnumerable<object> dataStore);
+
+
+		[Test, ManualTest]
+		public void ColumnWidthShouldNotIncludeSpacing() => ManualForm("Columns should be exactly 100 pixels wide", form =>
+		{
+			var grid = new T();
+			grid.Width = 250;
+			grid.Height = 200;
+			grid.Columns.Add(new GridColumn { DataCell = new TextBoxCell(0), Width = 100 });
+			grid.Columns.Add(new GridColumn { DataCell = new TextBoxCell(1), Width = 100 });
+
+			var data = CreateDataStore(10);
+			SetDataStore(grid, data);
+
+			return grid;
+		});
+
 	}
 
 	[TestFixture]
@@ -319,7 +489,7 @@ namespace Eto.Test.UnitTests.Forms.Controls
 			protected override Control OnCreateCell(CellEventArgs args)
 			{
 				var label = new Label { Text = "Hello" };
-				
+
 				var button = new Button { MinimumSize = Size.Empty, Text = "..." };
 				button.Bind(c => c.Visible, args, a => a.IsSelected); // kaboom when reloading!
 
@@ -389,7 +559,8 @@ namespace Eto.Test.UnitTests.Forms.Controls
 					HeaderText = "Text Cell"
 				});
 				control.DataStore = dd;
-				Application.Instance.AsyncInvoke(() => {
+				Application.Instance.AsyncInvoke(() =>
+				{
 					// can crash when had selection initially but no selection after.
 					try
 					{
@@ -407,36 +578,6 @@ namespace Eto.Test.UnitTests.Forms.Controls
 
 			if (exception != null)
 				ExceptionDispatchInfo.Capture(exception).Throw();
-		}
-
-		[Test, ManualTest]
-		public void SettingWidthShouldDisableAutosize()
-		{
-			ManualForm("Width of column should be 300px and not change when scrolling",
-			form => {
-				var control = new GridView();
-				control.Width = 400;
-				control.Height = 200;
-				var column = new GridColumn
-				{
-					DataCell = new TextBoxCell(0),
-					AutoSize = true,
-					Width = 300, // setting width should set AutoSize to false
-					HeaderText = "Cell"
-				};
-				control.Columns.Add(column);
-
-				Assert.IsFalse(column.AutoSize, "#1");
-
-				var dd = new List<GridItem>();
-				for (int i = 0; i < 1000; i++)
-				{
-					dd.Add(new GridItem { Values = new[] { "Row " + i } });
-				}
-				control.DataStore = dd;
-
-				return control;
-			});
 		}
 	}
 }

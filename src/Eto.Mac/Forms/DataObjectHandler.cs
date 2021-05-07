@@ -13,12 +13,14 @@ using Foundation;
 using CoreGraphics;
 using ObjCRuntime;
 using CoreAnimation;
+using MobileCoreServices;
 #else
 using MonoMac.AppKit;
 using MonoMac.Foundation;
 using MonoMac.CoreGraphics;
 using MonoMac.ObjCRuntime;
 using MonoMac.CoreAnimation;
+using MonoMac.MobileCoreServices;
 #if Mac64
 using nfloat = System.Double;
 using nint = System.Int64;
@@ -148,7 +150,7 @@ namespace Eto.Mac.Forms
 			if (availableType != null)
 			{
 				var data = Control.GetDataForType(availableType);
-				if (data == null)
+				if (data == null || data.Bytes == IntPtr.Zero)
 					return null;
 				var bytes = new byte[data.Length];
 				Marshal.Copy(data.Bytes, bytes, 0, (int)data.Length);
@@ -157,7 +159,10 @@ namespace Eto.Mac.Forms
 			return null;
 		}
 
-		public string GetString(string type) => Control.GetStringForType(type);
+		public string GetString(string type)
+		{
+			return Control.GetStringForType(type);
+		}
 
 
 		public string[] Types => Control.Types;

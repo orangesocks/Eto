@@ -118,6 +118,7 @@ namespace Eto.Mac.Forms
 		CGSize GetAlignmentSizeForSize(CGSize size);
 		CGPoint GetAlignmentPointForFramePoint(CGPoint point);
 		CGRect GetAlignmentRectForFrame(CGRect frame);
+		bool OnAcceptsFirstMouse(NSEvent theEvent);
 	}
 
 	static class MacView
@@ -131,6 +132,7 @@ namespace Eto.Mac.Forms
 		public static readonly object NaturalSizeInfinity_Key = new object();
 		public static readonly object Enabled_Key = new object();
 		public static readonly object ActualEnabled_Key = new object();
+		public static readonly object AcceptsFirstMouse_Key = new object();
 		public static readonly IntPtr selMouseDown = Selector.GetHandle("mouseDown:");
 		public static readonly IntPtr selMouseUp = Selector.GetHandle("mouseUp:");
 		public static readonly IntPtr selMouseDragged = Selector.GetHandle("mouseDragged:");
@@ -195,6 +197,7 @@ namespace Eto.Mac.Forms
 		public static readonly object UseAlignmentFrame_Key = new object();
 		public static readonly IntPtr selSetDataProviderForTypes_Handle = Selector.GetHandle("setDataProvider:forTypes:");
 		public static readonly IntPtr selInitWithPasteboardWriter_Handle = Selector.GetHandle("initWithPasteboardWriter:");
+		public static readonly IntPtr selClass_Handle = Selector.GetHandle("class");
 		public const string FlagsChangedEvent = "MacView.FlagsChangedEvent";
 
 		// before 10.12, we have to call base.Layout() AFTER we do our layout otherwise it doesn't work correctly..
@@ -521,7 +524,8 @@ namespace Eto.Mac.Forms
 						return command.Enabled;
 				}
 			}
-			var objClass = ObjCExtensions.object_getClass(sender);
+
+			var objClass = Messaging.IntPtr_objc_msgSend(sender, MacView.selClass_Handle);
 
 			if (objClass == IntPtr.Zero)
 				return false;
@@ -561,12 +565,6 @@ namespace Eto.Mac.Forms
 
 		public virtual IEnumerable<Control> VisualControls => Enumerable.Empty<Control>();
 
-		public virtual bool AutoSize
-		{
-			get { return Widget.Properties.Get<bool>(MacView.AutoSize_Key, true); }
-			protected set { Widget.Properties.Set(MacView.AutoSize_Key, value, true); }
-		}
-
 		protected virtual Size DefaultMinimumSize
 		{
 			get { return Size.Empty; }
@@ -590,8 +588,12 @@ namespace Eto.Mac.Forms
 			set
 			{
 				if (Widget.Properties.TrySet(MacView.UserPreferredSize_Key, value))
-					SetAutoSize();
+					OnUserPrefferedSizeChanged();
 			}
+		}
+
+		protected virtual void OnUserPrefferedSizeChanged()
+		{
 		}
 
 		public virtual Size Size
@@ -644,12 +646,6 @@ namespace Eto.Mac.Forms
 			set => Size = new Size(UserPreferredSize.Width, value);
 		}
 
-		protected virtual void SetAutoSize()
-		{
-			var userPreferredSize = UserPreferredSize;
-			AutoSize = userPreferredSize.Width == -1 || userPreferredSize.Height == -1;
-		}
-
 		protected Size? NaturalAvailableSize
 		{
 			get { return Widget.Properties.Get<Size?>(MacView.NaturalAvailableSize_Key); }
@@ -673,7 +669,7 @@ namespace Eto.Mac.Forms
 			NaturalSize = null;
 			NaturalSizeInfinity = null;
 
-			if (!Widget.Loaded)
+			if (!Widget.Loaded || Widget.IsSuspended)
 				return;
 
 			Widget.VisualParent.GetMacControl()?.InvalidateMeasure();
@@ -895,6 +891,7 @@ namespace Eto.Mac.Forms
 
 		public virtual void ResumeLayout()
 		{
+			InvalidateMeasure();
 		}
 
 
@@ -914,9 +911,11 @@ namespace Eto.Mac.Forms
 
 		protected bool HasBackgroundColor => Widget.Properties.Get<Color?>(MacView.BackgroundColorKey) != null;
 
+		protected virtual Color DefaultBackgroundColor => Colors.Transparent;
+
 		public virtual Color BackgroundColor
 		{
-			get { return Widget.Properties.Get<Color?>(MacView.BackgroundColorKey) ?? Colors.Transparent; }
+			get { return Widget.Properties.Get<Color?>(MacView.BackgroundColorKey) ?? DefaultBackgroundColor; }
 			set
 			{
 				if (value != BackgroundColor)
@@ -1216,17 +1215,34 @@ namespace Eto.Mac.Forms
 
 		protected virtual void FireOnShown() => FireOnShown(Widget);
 
+		static readonly string[] s_dropTypes = { UTType.Item, UTType.Content };
+
 		public bool AllowDrop
 		{
-			get { return Widget.Properties.Get<bool>(MacView.AllowDrop_Key); }
+			get => Widget.Properties.Get<bool>(MacView.AllowDrop_Key);
 			set
 			{
-				Widget.Properties.Set(MacView.AllowDrop_Key, value);
-				if (value)
-					DragControl.RegisterForDraggedTypes(new string[] { UTType.Item });
-				else
-					DragControl.UnregisterDraggedTypes();
+				if (Widget.Properties.TrySet(MacView.AllowDrop_Key, value))
+				{
+					if (value)
+						DragControl.RegisterForDraggedTypes(s_dropTypes);
+					else
+						DragControl.UnregisterDraggedTypes();
+				}
 			}
+		}
+
+		static string s_etoDragItemType;
+		static string s_etoDragImageType;
+
+		protected void SetupDragPasteboard(NSPasteboard pasteboard)
+		{
+			// add a UTType.Item base type so dragging works regardless of what was put in the DataObject.
+			if (s_etoDragItemType == null)
+				s_etoDragItemType = UTType.CreatePreferredIdentifier(UTType.TagClassNSPboardType, "eto.dragitem", UTType.Item);
+
+			// don't send an empty string, some code can't handle null data.
+			pasteboard.SetStringForType(".", s_etoDragItemType);
 		}
 
 		public virtual void DoDragDrop(DataObject data, DragEffects allowedAction, Image image, PointF origin)
@@ -1239,11 +1255,12 @@ namespace Eto.Mac.Forms
 			if (image != null)
 			{
 				var pasteboardItem = new NSPasteboardItem();
-				// item needs to have data, but we don't want to supply a standard UTI
-				const string utdragimage = "eto.dragimage";
-				pasteboardItem.SetStringForType(string.Empty, utdragimage);
-				// custom types need to be registered when using an NSPasteboardItem..
-				ContainerControl.RegisterForDraggedTypes(new string[] { utdragimage });
+
+				// register custom UTI for the drag image
+				if (s_etoDragImageType == null)
+					s_etoDragImageType = UTType.CreatePreferredIdentifier(UTType.TagClassNSPboardType, "eto.dragimage", UTType.Image);
+
+				pasteboardItem.SetStringForType(string.Empty, s_etoDragImageType);
 #if XAMMAC2
 				var draggingItem = new NSDraggingItem(pasteboardItem);
 #else
@@ -1266,6 +1283,8 @@ namespace Eto.Mac.Forms
 
 			var session = ContainerControl.BeginDraggingSession(draggingItems, NSApplication.SharedApplication.CurrentEvent, source);
 			handler.Apply(session.DraggingPasteboard);
+
+			SetupDragPasteboard(session.DraggingPasteboard);
 
 			// TODO: block until drag is complete?
 		}
@@ -1343,6 +1362,36 @@ namespace Eto.Mac.Forms
 			else
 				point.Y += alignment.Y;
 			return point;
+		}
+
+		
+		/// <summary>
+		/// Provides an event to specify that this control should trigger an initial MouseDown event when clicked on an inactive window
+		/// </summary>
+		/// <remarks>
+		/// On macOS, controls don't usually respond to clicks when initially clicking on an inactive window so the user can focus
+		/// that window without ill effects.  However, in some cases you may want the user to do this, so this event allows you to
+		/// specify if that should be allowed by setting <see cref="MouseEventArgs.Handled"/> to true.
+		/// </remarks>
+		public event EventHandler<MouseEventArgs> AcceptsFirstMouse
+		{
+			add => Widget.Properties.AddEvent(MacView.AcceptsFirstMouse_Key, value);
+			remove => Widget.Properties.RemoveEvent(MacView.AcceptsFirstMouse_Key, value);
+		}
+
+		protected virtual void OnAcceptsFirstMouse(MouseEventArgs e)
+		{
+			Widget?.Properties.TriggerEvent(MacView.AcceptsFirstMouse_Key, this, e);
+		}
+
+		bool IMacViewHandler.OnAcceptsFirstMouse(NSEvent theEvent)
+		{
+			if (!Widget.Properties.ContainsKey(MacView.AcceptsFirstMouse_Key))
+				return false;
+
+			var args = MacConversions.GetMouseEvent(this, theEvent, false);
+			OnAcceptsFirstMouse(args);
+			return args.Handled;
 		}
 	}
 }

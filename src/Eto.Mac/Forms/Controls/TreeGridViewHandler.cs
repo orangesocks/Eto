@@ -275,16 +275,7 @@ namespace Eto.Mac.Forms.Controls
 
 			public override void ColumnDidResize(NSNotification notification)
 			{
-				if (!Handler.IsAutoSizingColumns)
-				{
-					// when the user resizes the column, don't autosize anymore when data/scroll changes
-					var column = notification.UserInfo["NSTableColumn"] as NSTableColumn;
-					if (column != null)
-					{
-						var colHandler = Handler.GetColumn(column);
-						colHandler.AutoSize = false;
-					}
-				}
+				Handler?.ColumnDidResize(notification);
 			}
 
 			public override NSView GetView(NSOutlineView outlineView, NSTableColumn tableColumn, NSObject item)
@@ -340,6 +331,9 @@ namespace Eto.Mac.Forms.Controls
 
 			public override bool ItemExpandable(NSOutlineView outlineView, NSObject item)
 			{
+				if (item == null)
+					return true;
+
 				var myitem = Handler.GetEtoItem(item);
 				return myitem != null && myitem.Expandable;
 			}
@@ -507,7 +501,7 @@ namespace Eto.Mac.Forms.Controls
 
 				if (h.IsMouseDragging)
 				{
-					h.Control.DragInfo = null;
+					h.DragInfo = null;
 					// give MouseMove event a chance to start the drag
 					h.DragPasteboard = pboard;
 
@@ -536,7 +530,7 @@ namespace Eto.Mac.Forms.Controls
 					var args = MacConversions.GetMouseEvent(h, NSApplication.SharedApplication.CurrentEvent, false);
 					h.Callback.OnMouseMove(h.Widget, args);
 					h.DragPasteboard = null;
-					return h.Control.DragInfo != null;
+					return h.DragInfo != null;
 				}
 
 				return false;
@@ -549,19 +543,26 @@ namespace Eto.Mac.Forms.Controls
 
 			public TreeGridViewHandler Handler
 			{
-				get { return WeakHandler.Target as TreeGridViewHandler; }
+				get { return WeakHandler?.Target as TreeGridViewHandler; }
 				set { WeakHandler = new WeakReference(value); }
 			}
 
-			internal GridDragInfo DragInfo { get; set; }
+			public EtoOutlineView()
+			{
+			}
+
+			public EtoOutlineView(IntPtr handle) : base(handle)
+			{
+			}
 
 #if XAMMAC2
 			public override NSImage DragImageForRowsWithIndexestableColumnseventoffset(NSIndexSet dragRows, NSTableColumn[] tableColumns, NSEvent dragEvent, ref CGPoint dragImageOffset)
 			{
-				var img = DragInfo?.DragImage;
+				var dragInfo = Handler?.DragInfo;
+				var img = dragInfo?.DragImage;
 				if (img != null)
 				{
-					dragImageOffset = DragInfo.GetDragImageOffset();
+					dragImageOffset = dragInfo.GetDragImageOffset();
 					return img;
 				}
 				return base.DragImageForRowsWithIndexestableColumnseventoffset(dragRows, tableColumns, dragEvent, ref dragImageOffset);
@@ -572,10 +573,11 @@ namespace Eto.Mac.Forms.Controls
 			[Export("dragImageForRowsWithIndexes:tableColumns:event:offset:")]
 			public NSImage DragImageForRows(NSIndexSet dragRows, NSTableColumn[] tableColumns, NSEvent dragEvent, ref CGPoint dragImageOffset)
 			{
-				var img = DragInfo?.DragImage;
+				var dragInfo = Handler?.DragInfo;
+				var img = dragInfo?.DragImage;
 				if (img != null)
 				{
-					dragImageOffset = DragInfo.GetDragImageOffset();
+					dragImageOffset = dragInfo.GetDragImageOffset();
 					return img;
 				}
 
@@ -589,7 +591,7 @@ namespace Eto.Mac.Forms.Controls
 			[Export("draggingSession:sourceOperationMaskForDraggingContext:")]
 			public NSDragOperation DraggingSessionSourceOperationMask(NSDraggingSession session, IntPtr context)
 			{
-				return DragInfo?.AllowedOperation ?? NSDragOperation.None;
+				return Handler?.DragInfo?.AllowedOperation ?? NSDragOperation.None;
 			}
 
 			public override void MouseDown(NSEvent theEvent)
@@ -633,12 +635,13 @@ namespace Eto.Mac.Forms.Controls
 			public EtoOutlineView(TreeGridViewHandler handler)
 			{
 				Delegate = new EtoOutlineDelegate { Handler = handler };
+				DataSource = new EtoDataSource { Handler = handler };
 				//HeaderView = null,
 				AutoresizesOutlineColumn = false;
 				//AllowsColumnResizing = false,
 				AllowsColumnReordering = false;
 				FocusRingType = NSFocusRingType.None;
-				ColumnAutoresizingStyle = NSTableViewColumnAutoresizingStyle.None;
+				ColumnAutoresizingStyle = NSTableViewColumnAutoresizingStyle.Uniform;
 				SetDraggingSourceOperationMask(NSDragOperation.All, true);
 				SetDraggingSourceOperationMask(NSDragOperation.All, false);
 			}
@@ -662,6 +665,10 @@ namespace Eto.Mac.Forms.Controls
 		{
 			switch (id)
 			{
+				case Grid.CellEditingEvent:
+				case Grid.CellEditedEvent:
+					// handled by delegate
+					break;
 				case TreeGridView.ActivatedEvent:
 					Widget.KeyDown += (sender, e) =>
 					{
@@ -714,18 +721,18 @@ namespace Eto.Mac.Forms.Controls
 			get { return store; }
 			set
 			{
+				Control.BeginUpdates();
 				store = value;
 				topitems.Clear();
 				cachedItems.Clear();
-				if (Control.DataSource == null)
-					Control.DataSource = new EtoDataSource { Handler = this };
-				else
-					Control.ReloadData();
+				Control.ReloadData();
 				suppressExpandCollapseEvents++;
 				ExpandItems(null);
 				suppressExpandCollapseEvents--;
-				if (Widget.Loaded)
-					AutoSizeColumns(true);
+				Control.EndUpdates();
+
+				ResetAutoSizedColumns();
+				InvalidateMeasure();
 			}
 		}
 
@@ -830,24 +837,25 @@ namespace Eto.Mac.Forms.Controls
 					Control.DeselectAll(Control);
 				else
 				{
-
 					EtoTreeItem myitem;
 					if (cachedItems.TryGetValue(value, out myitem))
 					{
 						var cachedRow = Control.RowForItem(myitem);
 						if (cachedRow >= 0)
 						{
-							Control.ScrollRowToVisible(cachedRow);
 							Control.SelectRow((nnint)cachedRow, false);
+							ScrollToRow((int)cachedRow);
 							return;
 						}
 					}
 
+					Control.BeginUpdates();
 					var row = ExpandToItem(value);
+					Control.EndUpdates();
 					if (row != null)
 					{
-						Control.ScrollRowToVisible(row.Value);
 						Control.SelectRow((nnint)row.Value, false);
+						ScrollToRow((int)row.Value);
 					}
 				}
 			}
@@ -855,11 +863,15 @@ namespace Eto.Mac.Forms.Controls
 
 		void ExpandItems(NSObject parent)
 		{
-			var ds = (EtoDataSource)Control.DataSource;
-			var count = ds.GetChildrenCount(Control, parent);
+			int count;
+			if (parent == null)
+				count = store?.Count ?? 0;
+			else
+				count = ((parent as EtoTreeItem)?.Item as ITreeGridStore<ITreeGridItem>)?.Count ?? 0;
+
 			for (int i = 0; i < count; i++)
 			{
-				var item = ds.GetChild(Control, i, parent) as EtoTreeItem;
+				var item = Control.GetChild(i, parent) as EtoTreeItem;
 				if (item != null && item.Item.Expanded && !Control.IsItemExpanded(item))
 				{
 					Control.ExpandItem(item);
@@ -894,6 +906,7 @@ namespace Eto.Mac.Forms.Controls
 			if (!Control.IsFlipped)
 				loc.Y = Control.Frame.Height - contentView.Frame.Height - loc.Y;
 
+			Control.BeginUpdates();
 			topitems.Clear();
 			cachedItems.Clear();
 			Control.ReloadData();
@@ -916,6 +929,7 @@ namespace Eto.Mac.Forms.Controls
 				else
 					isSelectionChanged = true;
 			}
+			Control.EndUpdates();
 
 			ScrollView.ReflectScrolledClipView(contentView);
 			suppressExpandCollapseEvents--;
@@ -1034,39 +1048,12 @@ namespace Eto.Mac.Forms.Controls
 		public TreeGridViewDragInfo GetDragInfo(DragEventArgs args) => args.ControlObject as TreeGridViewDragInfo;
 
 
-		static readonly object DragPasteboard_Key = new object();
-
-		NSPasteboard DragPasteboard
-		{
-			get { return Widget.Properties.Get<NSPasteboard>(DragPasteboard_Key); }
-			set { Widget.Properties.Set(DragPasteboard_Key, value); }
-		}
-
 		static readonly object CustomSelectedItems_Key = new object();
 
 		IList<object> CustomSelectedItems
 		{
 			get { return Widget.Properties.Get<IList<object>>(CustomSelectedItems_Key); }
 			set { Widget.Properties.Set(CustomSelectedItems_Key, value); }
-		}
-
-		public override void DoDragDrop(DataObject data, DragEffects allowedAction, Image image, PointF origin)
-		{
-			if (DragPasteboard != null)
-			{
-				var handler = data.Handler as IDataObjectHandler;
-				handler?.Apply(DragPasteboard);
-				Control.DragInfo = new GridDragInfo
-				{
-					AllowedOperation = allowedAction.ToNS(),
-					DragImage = image.ToNS(),
-					ImageOffset = origin
-				};
-			}
-			else
-			{
-				base.DoDragDrop(data, allowedAction, image, origin);
-			}
 		}
 
 		static IEnumerable<object> GetItems(NSArray items)

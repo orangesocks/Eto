@@ -32,6 +32,7 @@ namespace Eto.Mac.Forms.Controls
 	{
 		public static object AutoSelectMode_Key = new object();
 		public static object HasInitialFocus_Key = new object();
+		public static object NeedsSelectAll_Key = new object();
 	}
 
 	public abstract class MacText<TControl, TWidget, TCallback> : MacControl<TControl, TWidget, TCallback>, TextControl.IHandler, IMacText
@@ -44,22 +45,25 @@ namespace Eto.Mac.Forms.Controls
 
 		public Range<int>? InitialSelection { get; set; }
 
-		public override Color BackgroundColor
+		protected override Color DefaultBackgroundColor => Control.BackgroundColor.ToEto();
+
+		protected override bool UseColorizeCellWithAlphaOnly => true;
+
+		protected override void SetBackgroundColor(Color? color)
 		{
-			get { return Control.BackgroundColor.ToEto(); }
-			set
+			base.SetBackgroundColor(color);
+			var c = color ?? Colors.Transparent;
+			Control.BackgroundColor = c.ToNSUI();
+			Control.DrawsBackground = c.A > 0;
+			Control.WantsLayer = c.A < 1;
+			if (Widget.Loaded && HasFocus)
 			{
-				var color = value.ToNSUI();
-				Control.BackgroundColor = color;
-				Control.DrawsBackground = value.A > 0;
-				if (Widget.Loaded && HasFocus)
+				var editor = Control.CurrentEditor;
+				if (editor != null)
 				{
-					var editor = Control.CurrentEditor;
-					if (editor != null)
-					{
-						editor.BackgroundColor = color;
-						editor.DrawsBackground = value.A > 0;
-					}
+					var nscolor = c.ToNSUI();
+					editor.BackgroundColor = nscolor;
+					editor.DrawsBackground = c.A > 0;
 				}
 			}
 		}
@@ -102,7 +106,7 @@ namespace Eto.Mac.Forms.Controls
 			get { return Control.TextColor.ToEto(); }
 			set { Control.TextColor = value.ToNSUI(); }
 		}
-
+		
 		public int CaretIndex
 		{
 			get { return InitialSelection?.Start ?? (int?)Control.CurrentEditor?.SelectedRange.Location ?? LastSelection?.Start ?? 0; }
@@ -166,16 +170,24 @@ namespace Eto.Mac.Forms.Controls
 		{
 			base.Initialize();
 			Widget.GotFocus += Widget_GotFocus;
+			Widget.LostFocus += Widget_LostFocus;
 			Widget.MouseDown += Widget_MouseDown;
 		}
 
 		void Widget_MouseDown(object sender, MouseEventArgs e)
 		{
-			if (AutoSelectMode == AutoSelectMode.Always)
+			e.Handled = SelectAllOnMouseDown(e);
+		}
+		
+		protected virtual bool SelectAllOnMouseDown(MouseEventArgs e)
+		{
+			if (NeedsSelectAll)
 			{
 				SelectAll();
-				e.Handled = true;
+				NeedsSelectAll = false;
+				return true;
 			}
+			return false;
 		}
 
 
@@ -183,6 +195,18 @@ namespace Eto.Mac.Forms.Controls
 		{
 			get { return Widget.Properties.Get(MacText.HasInitialFocus_Key, false); }
 			set { Widget.Properties.Set(MacText.HasInitialFocus_Key, value, false); }
+		}
+
+		protected bool NeedsSelectAll
+		{
+			get { return Widget.Properties.Get(MacText.NeedsSelectAll_Key, false); }
+			set { Widget.Properties.Set(MacText.NeedsSelectAll_Key, value, false); }
+		}
+		
+		void Widget_LostFocus(object sender, EventArgs e)
+		{
+			if (AutoSelectMode == AutoSelectMode.Always)
+				NeedsSelectAll = false;
 		}
 
 		void Widget_GotFocus(object sender, EventArgs e)
@@ -205,8 +229,12 @@ namespace Eto.Mac.Forms.Controls
 				else
 				{
 					var len = Text?.Length ?? 0;
-					editor.SelectedRange = new NSRange(0, len);
+					editor.SelectedRange = new NSRange(len, 0);
 				}
+			}
+			else if (AutoSelectMode == AutoSelectMode.Always)
+			{
+				NeedsSelectAll = true;
 			}
 			HasInitialFocus = true;
 		}
